@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+requests
+tenacity
+openai
+python-dotenv
+crawl4ai
+pydantic
+litellm
+tiktoken
+python-multipart
+orjson
