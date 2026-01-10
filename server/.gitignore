@@ -1,0 +1,11 @@
+*.json
+*.csv
+
+.env
+.DS_Store
+.venv/
+.vscode/
+.cursor/
+__pycache__/
+
+!prompts.json

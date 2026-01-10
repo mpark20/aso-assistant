@@ -1,0 +1,44 @@
+{
+    "inheritance_pattern": {
+        "tag": "inheritance_pattern",
+        "prompt": "Identify the pattern of inheritance of variant {variant}. Select from autosomal domainant/recessive, or X-linked dominant/recessive.",
+        "additional_instructions": "In the case of an (autosomal) recessive inheritance, the variant is usually either being reported as homozygous or a second variant in trans has been identified (i.e., compound heterozygous). In the case of X-linked disorders in XY males, the variant will be hemizygous. For (autosomal) dominant inheritance, one variant should be reported either de novo or inherited from one of the parents. If the variant is implicated in different diseases with distinct inheritance patterns, report all of them.",
+        "variables": ["variant"]
+    },
+    "pathomechanism": {
+        "tag": "pathomechanism",
+        "prompt": "What is the pathomechanism of {variant}?",
+        "additional_instructions": "A pathogenic variant can have different pathomechanisms: The variant can lead to a loss of function of a protein (LoF), a toxic gain of function (GoF), or a dominant-negative (DN) effect. Publications and reports on the variant will be most useful here, specifically functional evidence. Though if no functional studies have been performed, the following considerations can be applied:\n- Variants with a predicted LoF effect like nonsense and frameshift variants can be assumed in many clinical contexts to result in a null allele. The exception is if premature stop codons are formed in the last exon.\n- For genes where both LoF and GoF are a known cause of disease, assessing the pathomechanism of a missense variant is challenging. If the phenotypes for the LoF and GoF variants are distinct enough, the variant's associated phenotypes can be used to disambiguate. Otherwise, more evidence is needed to make the determination.\n Make sure the claimed pathomechansim is backed by evidence from papers or bioinformatics databases. If sufficient evidence does not exist for the variant, report that you are unable to assess the pathomechanism.",
+        "variables": ["variant"]
+    },
+    "dosage_sensitivity": {
+        "tag": "dosage_sensitivity",
+        "prompt": "Is gene {gene} associated with haploinsufficiency?",
+        "additional_instructions": "Haploinsufficiency refers to a situation in which one healthy, wildtype allele does not generate sufficient protein product to preserve the physiological state. In most cases, haploinsufficiency is connected to AD disorders associated with LoF variants; however, this isn't always the case. Further indications of whether a gene is associated with haploinsufficiency can be gained from checking the haploinsufficiency score determined by the ClinGen consortium (highest level of evidence), or gene constraint metrics (e.g. pLI, LOEUF) in gnomAD. Typically, a pLI score of equal to or greater than 0.9, the top three deciles of LOEUF scores, or a ClinGen haploinsufficiency score of 3 (sufficient evidence) indicates haploinsufficiency being a cause of disease (please note that this should be verified by functional evidence available in the literature). Population databases are also helpful in checking if there are carriers of LoF variants in the general population, which indicates the loss of one allele is safe. Publications/reports will also helpful to determine whether alterations in gene dosage are an underlying cause of disease.",
+        "variables": ["gene"]
+    },
+    "splicing_effects::identification": {
+        "tag": "splicing_effects::identification",
+        "prompt": "What is the impact of variant {variant} on splicing, if at all?",
+        "additional_instructions": "The effects on splicing of each variant need to be confirmed with a functional assay, whereby only RNAseq, qPCR, or cDNA sequencing/analysis obtained from patient-derived cells can be considered sufficiently reliable. Data gathered through mini- and midigenes cannot be considered sufficient as these assays do not take the full genetic environmental context into account and results can be misleading. the prediction of splicing effects using in silico tools is not sufficient evidence. If splicing effects are confirmed, the exact effects need to be evaluated. This can be a gain of an acceptor/donor splice site, or the loss/weakening of an acceptor/donor splice site ('loss' implies no wildtype transcript/splicing at canonical splice site, whereas 'weakening' implies some wiltype transcript is still produced and/or protein function is defective). A lack of functional evidence towards splicing means the splicing effect cannot be determined.",
+        "variables": ["variant"]
+    },
+    "splicing_effects::categorization": {
+        "tag": "splicing_effects::categorization",
+        "prompt": "Based on the variant type, then use the appropriate heading to characterize its splicing impact. \n\nCase 1, Nonsense and frameshift variant:\nDetermine whether the splice aberration itself leads to a loss-of-function or toxic gain-of-function effect on the protein level.\n\nCase 2, Missense variant or small in-frame indel (<50 bp):\nDetermine whether the pathogenic effect is attributed to aberrant splicing, the nucleotide change from the missense/indel, or a combination of both. If possible, characterize whether each cause results in a loss-of-function or gain-of-function effect at the protein level (if any). Information on variants that code for the same amino acid change but do not impact splicing can be helpful to untangle effects here. If the effect of a missense variant or in-frame indel on the protein sequence is not known, this cannot be determined.",
+        "additional_instructions": "",
+        "variables": ["variant"]
+    },
+    "aso_check": {
+        "tag": "aso_check",
+        "prompt": "Provide an overview of ASOs that have been developed for variant {variant}, if any.",
+        "additional_instructions": "This can mean that an ASO has been developed for the specific variant, e.g., a splice correction ASO or a gapmer ASO, or an ASO has been developed for an exon skipping approach for an exon this variant is located in. It can also be that a gapmer ASO/siRNA is available for the gene in question or allele-specific for a SNP that is in phase with the pathogenic variant. If an ASO has been developed, it should be carefully evaluated whether there is enough functional evidence that the ASO development was successful. That means, for example, demonstrating restoration of protein levels or rescue of a cellular phenotype.",
+        "variables": ["variant"]
+    },
+    "placeholder": {
+        "tag": "",
+        "prompt": "",
+        "additional_instructions": "",
+        "variables": []
+    }
+}
