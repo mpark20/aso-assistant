@@ -1,5 +1,5 @@
 from src.tool_llm import ToolLLM
-from src.tools.general import WebSearchTool, ScholarSearchTool, CrawlWebpageTool
+from src.tools.general import ScholarSearchTool, WebSearchTool, BrowseWebpageTool
 from src.tools.genetics import NCBISearchTool
 from src.tools._apis import search_mutalyzer
 from pydantic import BaseModel
@@ -55,7 +55,7 @@ async def run_workflow(request: WorkflowRequest, stream: bool = False):
     variant_info["gene"] = request.variant.gene
 
     # get tool descriptions
-    tools = [WebSearchTool(), CrawlWebpageTool(), ScholarSearchTool(), NCBISearchTool()]
+    tools = [WebSearchTool(), BrowseWebpageTool(), ScholarSearchTool(), NCBISearchTool()]
     tool_descriptions = ""
     for tool in tools:
         schema = tool.get_description()

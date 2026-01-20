@@ -4,7 +4,7 @@ from typing import TypedDict, Optional
 import uuid
 from pydantic import BaseModel
 from src.tools._apis import (
-    crawl_webpage, search_serper, search_serper_scholar, search_gpt,
+    browse_webpage, search_serper, search_serper_scholar, search_gpt,
 )
 
 
@@ -195,13 +195,13 @@ class AdvancedWebSearchTool(BaseTool):
         return text
 
 
-class CrawlWebpageTool(BaseTool):
-    def __init__(self, name: str = "crawl_webpage"):
+class BrowseWebpageTool(BaseTool):
+    def __init__(self, name: str = "browse_webpage"):
         super().__init__(name)
     
     def get_description(self) -> dict[str, any]:
         return {
-            "name": "crawl_webpage",
+            "name": "browse_webpage",
             "description": "Crawls a given webpage url and returns its contents (if available).",
             "parameters": {
                 "url": "(required) The url of the webpage to crawl",
@@ -210,7 +210,7 @@ class CrawlWebpageTool(BaseTool):
         }
     
     async def _execute(self, url: str = None) -> dict[str, any]:
-        return await crawl_webpage(url=url)
+        return await browse_webpage(url=url)
     
     def _parse_output(self, raw_output: dict[str, any]) -> list[Document]:
         url = raw_output["url"]
@@ -220,7 +220,7 @@ class CrawlWebpageTool(BaseTool):
 
 
 async def main():
-    tool = CrawlWebpageTool()
+    tool = BrowseWebpageTool()
     out = await tool(url="https://www.ncbi.nlm.nih.gov/clinvar/RCV000355472/")
     print(json.dumps(out, indent=2))
 

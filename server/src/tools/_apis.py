@@ -308,12 +308,12 @@ async def search_gpt(query: str) -> str:
     return response.to_dict()
 
 
-class Crawl4AIResult(TypedDict):
+class BrowseWebpageResult(TypedDict):
     url: str
     text: str
     success: bool
 
-async def crawl_webpage(url: str) -> Crawl4AIResult:
+async def browse_webpage(url: str) -> BrowseWebpageResult:
     """
     Crawl a given webpage url and return its contents.
     Credit: https://github.com/rlresearch/dr-tulu/blob/main/agent/dr_agent/mcp_backend/local/crawl4ai_fetcher.py#L25
@@ -337,7 +337,7 @@ async def crawl_webpage(url: str) -> Crawl4AIResult:
     
     if not getattr(result, "success", True):
         error = getattr(result, "error_message", "Unknown error")
-        return Crawl4AIResult(
+        return BrowseWebpageResult(
             url=url,
             text=error,
             success=False,
@@ -358,7 +358,7 @@ async def crawl_webpage(url: str) -> Crawl4AIResult:
         else:
             md_value = str(md_obj) if md_obj is not None else ""
     
-    return Crawl4AIResult(
+    return BrowseWebpageResult(
         url=url,
         text=md_value,
         success=True,
@@ -372,7 +372,7 @@ class MutalyzerResult(TypedDict):
     affected_exon: Optional[int]
     trasnscript_exons: Optional[int]
 
-def search_mutalyzer(variant: str) -> str:
+def search_mutalyzer(variant: str) -> MutalyzerResult:
     """
     Normalize a genetic variant using Mutalyzer and return the normalized HGVS.
     Raises ValueError if Mutalyzer returns an error or an unexpected response.
