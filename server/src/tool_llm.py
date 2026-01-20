@@ -66,7 +66,7 @@ class ToolLLM:
         stop_sequences: Optional[list[str]] = None,
         verbose: bool = False,
         **kwargs
-    ) -> str:
+    ) -> GenerateWithToolsOutput:
 
         tool_calls = []
         original_message_count = len(messages)
@@ -445,10 +445,10 @@ class ToolLLM:
 
 
 async def main():
-    from src.tools.genetics import NCBISearchTool
-    from src.tools.general import WebSearchTool, CrawlWebpageTool
+    from src.tools.genetics import NCBISearchTool, UniProtSearchTool, BrowseUniProtTool
+    from src.tools.general import WebSearchTool, BrowseWebpageTool
 
-    tools = [NCBISearchTool(), WebSearchTool(), CrawlWebpageTool()]
+    tools = [NCBISearchTool(), UniProtSearchTool(), BrowseUniProtTool(), WebSearchTool(), BrowseWebpageTool()]
     schema_str = ""
     for tool in tools:
         schema = tool.get_description()
@@ -494,7 +494,7 @@ async def main():
     """
     
     tool_llm = ToolLLM(
-        model="gemini/gemini-2.0-flash",
+        model="gpt-4o-mini",
         tools=tools,
         is_commercial=True,
     )
@@ -502,10 +502,10 @@ async def main():
     response = await tool_llm.run(
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "A pathomechanism can be loss of function, gain of function, or dominanat negative. What pathomechanism is associated with variant NM_000392.5:c.3399_3400delTT?"},
+            {"role": "user", "content": "What exon does variant NM_000350.3:c.2626C>T lie on, and what protein domains overlap this exon? Evaluate the importance of such domains, and the impact of downregulating them."},
         ],
         stop_sequences=["</solution>", "</call_tool>"],
-        max_tool_calls=2,
+        max_tool_calls=10,
         verbose=True,
     )
     print(response)

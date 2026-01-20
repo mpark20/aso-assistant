@@ -456,6 +456,108 @@ def search_mutalyzer(variant: str) -> MutalyzerResult:
     return result
 
 
+class UniProtResult(TypedDict):
+    uniprot_id: str
+    uniprot_name: str
+    organism: str
+    entry_type: str
+    url: str
+
+def search_uniprot(protein_name: str = None, max_results: int = 10) -> list[UniProtResult]:
+    """
+    Search UniProt to find protein IDs for a given protein name.
+    Args:
+        protein_name: The name of the protein to search for.
+        max_results: The maximum number of results to return.
+    Returns:
+        A list of UniProtResult objects.
+    """
+    query_kwargs = {
+        "endpoint": "https://rest.uniprot.org/uniprotkb/search",
+        "method": "GET",
+        "params": {"query": protein_name},
+        "description": "UniProt search API query"
+    }
+    search_response = query_api_with_retry(**query_kwargs)
+    if not search_response.get("success"):
+        return search_response
+    result = search_response["result"]
+
+    parsed_results = []
+    for res in result["results"]:
+        parsed_results.append(UniProtResult(
+            uniprot_id=res['primaryAccession'],
+            uniprot_name=res.get("uniProtkbId", ""),
+            organism=res.get("organism", {}).get("scientificName", ""),
+            entry_type=res.get("entryType", ""),
+            url=f"https://www.ebi.ac.uk/interpro/protein/UniProt/{res['primaryAccession']}"
+        ))
+    return parsed_results[:max_results]
+
+
+class InterProFeature(TypedDict):
+    metadata: dict[str, any]
+    overlapping_regions: list[dict[str, any]]
+
+class BrowseUniProtResult(TypedDict):
+    uniprot_id: str
+    protein_length: int
+    source_database: str
+    url: str
+    num_results: int
+    results: list[InterProFeature]
+
+def browse_uniprot(uniprot_id: str = None) -> BrowseUniProtResult:
+    f"""
+    Browse a UniProt protein's overlapping InterPro features in detail.
+    Args:
+        uniprot_id: The UniProt ID of the protein to browse.
+    Returns:
+        A dictionary containing the browse results.
+    """
+    # TODO: handle case where uniprot_id is not provided
+    endpoint = f"https://www.ebi.ac.uk/interpro/api/entry/interpro/protein/uniprot/{uniprot_id}"
+    query_kwargs = {
+        "endpoint": endpoint,
+        "method": "GET",
+        "description": "UniProt browse API query"
+    }
+    browse_response = query_api_with_retry(**query_kwargs)
+    if not browse_response.get("success"):
+        return browse_response
+
+    result = browse_response["result"]
+    protein_length, source_db = None, None
+    parsed_results = []
+    for feature in result["results"]:
+        # get parent metadata if not already set
+        parent_protein = feature.get("proteins", [{}])[0]
+        if not protein_length:
+            protein_length = parent_protein.get("length")
+            source_db = parent_protein.get("source_database")
+        
+        # parse overlapping fragments
+        fragments = []
+        for entry in parent_protein.get("entry_protein_locations", []):
+            fragments.extend(entry.get("fragments", []))
+        parsed_results.append(InterProFeature(
+            metadata=feature.get("metadata", {}),
+            overlapping_regions=fragments,
+        ))
+        if not protein_length:
+            protein_length = feature.get("proteins", [{}])[0].get("protein_length")
+        if not source_db:
+            source_db = feature.get("metadata", {}).get("source_database")
+    return BrowseUniProtResult(
+        uniprot_id=uniprot_id,
+        protein_length=protein_length,
+        source_database=source_db,
+        url=f"https://www.ebi.ac.uk/interpro/protein/UniProt/{uniprot_id}",
+        num_results=result.get("count", 0),
+        results=parsed_results,
+    )
+
+
 
 # special formatting functions for ClinVar results
 def clinvar_formatter(data: dict[str, any]) -> dict[str, any]:
@@ -502,11 +604,15 @@ def clinvar_formatter(data: dict[str, any]) -> dict[str, any]:
 
 
 if __name__ == "__main__":
-    for variant in ['NM_000392.5:c.3399_3400delTT', 'NM_000548.3:c.3598C>T', 'NM_145239.2:c.649dupC', 'NM_001037.4:c.363C>G']:
-        response = search_ncbi("clinvar", variant)
-        if not len(response["results"]):
-            ref, change = variant.split(":")
-            variant = f"{ref.split('.')[0]}:{change}"
-            response = search_ncbi("clinvar", variant)
-        print(response)
-        print()
+    # for variant in ['NM_000392.5:c.3399_3400delTT', 'NM_000548.3:c.3598C>T', 'NM_145239.2:c.649dupC', 'NM_001037.4:c.363C>G']:
+    #     response = search_ncbi("clinvar", variant)
+    #     if not len(response["results"]):
+    #         ref, change = variant.split(":")
+    #         variant = f"{ref.split('.')[0]}:{change}"
+    #         response = search_ncbi("clinvar", variant)
+    #     print(response)
+    #     print()
+    results = search_uniprot("abca4_human")
+    uniprot_id = results[0]["uniprot_id"]
+    browse_result = browse_uniprot(uniprot_id)
+    print(json.dumps(browse_result, indent=2))

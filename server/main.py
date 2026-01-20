@@ -1,6 +1,6 @@
 from src.tool_llm import ToolLLM
 from src.tools.general import ScholarSearchTool, WebSearchTool, BrowseWebpageTool
-from src.tools.genetics import NCBISearchTool
+from src.tools.genetics import NCBISearchTool, UniProtSearchTool, BrowseUniProtTool
 from src.tools._apis import search_mutalyzer
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
@@ -55,7 +55,7 @@ async def run_workflow(request: WorkflowRequest, stream: bool = False):
     variant_info["gene"] = request.variant.gene
 
     # get tool descriptions
-    tools = [WebSearchTool(), BrowseWebpageTool(), ScholarSearchTool(), NCBISearchTool()]
+    tools = [NCBISearchTool(), UniProtSearchTool(), BrowseUniProtTool(), WebSearchTool(), BrowseWebpageTool(), ScholarSearchTool()]
     tool_descriptions = ""
     for tool in tools:
         schema = tool.get_description()
@@ -129,9 +129,9 @@ if __name__ == "__main__":
     #     gene="ABCA4",
     # )
     # request = WorkflowRequest(
-    #     step="aso_check",
+    #     step="exon_skipping::functional_domains",
     #     variant=variant,
     # )
     # response = asyncio.run(run_workflow(request))
-    # with open("tool_llm_sample.json", "w") as f:
+    # with open("dumps/tool_llm_sample.json", "w") as f:
     #     json.dump(response, f, indent=2)
