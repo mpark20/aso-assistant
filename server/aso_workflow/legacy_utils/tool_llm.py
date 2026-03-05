@@ -5,7 +5,7 @@ import tiktoken
 import re
 from typing import Optional, Any, List, Dict, TypedDict
 from pydantic import BaseModel
-from src.tools.general import BaseTool, ToolOutput
+from aso_workflow.legacy_utils.tools import BaseTool, ToolOutput
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -443,10 +443,8 @@ class ToolLLM:
                 }
         return results
 
-
 async def main():
-    from src.tools.genetics import NCBISearchTool, UniProtSearchTool, BrowseUniProtTool
-    from src.tools.general import WebSearchTool, BrowseWebpageTool
+    from aso_workflow.legacy_utils.tools import WebSearchTool, BrowseWebpageTool, NCBISearchTool, UniProtSearchTool, BrowseUniProtTool
 
     tools = [NCBISearchTool(), UniProtSearchTool(), BrowseUniProtTool(), WebSearchTool(), BrowseWebpageTool()]
     schema_str = ""

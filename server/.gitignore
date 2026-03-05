@@ -1,5 +1,7 @@
 *.json
 *.csv
+*.svg
+*.html
 
 .env
 .DS_Store
@@ -7,6 +9,10 @@
 .vscode/
 .cursor/
 __pycache__/
-dumps/
 
+
+dumps/
+data/
+outputs*/
 !prompts.json
+scratch.ipynb
