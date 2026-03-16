@@ -326,6 +326,9 @@ def search_ncbi(
         "retmax": 100,
         "usehistory": "y",  # Use history server to store results
     }
+    
+    if os.getenv("NCBI_API_KEY"):
+        esearch_params["api_key"] = os.getenv("NCBI_API_KEY")
 
     # Get IDs of matching entries
     query_kwargs = {
@@ -1172,6 +1175,8 @@ def search_clingen_dosage_kb(gene_symbol: str) -> list[ClinGenDosageKBResult]:
         payload = "\n".join(lines)
         payload = StringIO(payload)
         data = pd.read_csv(payload)
+        col_renames = {k:"_".join(k.split(" ")).lower() for k in data.columns}
+        data.rename(columns=col_renames, inplace=True)
         data.to_csv(dosage_file, index=False)  # cache to disk
     else:
         data = pd.read_csv(dosage_file)

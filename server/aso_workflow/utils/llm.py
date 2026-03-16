@@ -6,11 +6,12 @@ LLM utilities for the ASO workflow:
 """
 import asyncio
 import json
-import pdb
 import re
+import uuid
 import threading
 import time
 import litellm
+from litellm.types.utils import Function, ChatCompletionMessageToolCall
 import httpx
 from dataclasses import dataclass
 from dotenv import load_dotenv
@@ -168,11 +169,15 @@ def call_llm(
     if tools:
         call_kwargs["tools"] = tools
     if not _is_commercial_api_model(call_kwargs["model"]):
-        call_kwargs["api_base"] = "http://localhost:8000/v1"
+        call_kwargs["api_base"] = "http://localhost:30009/v1"
 
     response = _completion_with_retry(max_retries=max_retries, **call_kwargs)
     _accumulate_usage(usage_acc, model, response)
     msg = response.choices[0].message
+
+    if "<tool_call>" in msg.content and msg.tool_calls is None:
+        tool_call = _custom_parse_tool_call(msg.content)
+        msg.tool_calls = [tool_call]
 
     # Tool-use loop
     while (tools and hasattr(msg, "tool_calls") and msg.tool_calls and tool_calls_made < max_tool_calls):
@@ -182,7 +187,7 @@ def call_llm(
             "content": msg.content,
             "tool_calls": [
                 {
-                    "id": tc.id,
+                    "id": getattr(tc, "id", None) or f"call_{uuid.uuid4().hex[:12]}",
                     "type": "function",
                     "function": {
                         "name": tc.function.name,
@@ -198,18 +203,19 @@ def call_llm(
         for tc in msg.tool_calls:
             tool_calls_made += 1
             try:
-                args = json.loads(tc.function.arguments)
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    args = json.loads(args)
             except json.JSONDecodeError:
                 args = {}
 
             result_str = execute_tool(tc.function.name, args, cache)
             tool_call_logs.append({
-                "tool_call_id": tc.id,
                 "tool": tc.function.name,
                 "args": args,
                 "result": result_str,
             })
-            tool_results.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
+            tool_results.append({"role": "tool", "content": result_str})
 
             if tool_calls_made >= max_tool_calls:
                 tool_results.append({
@@ -223,7 +229,6 @@ def call_llm(
                 break
 
         messages.extend(tool_results)
-
         # Call the LLM with the updated conversation history (each call retried independently)
         call_kwargs["messages"] = messages
         response = _completion_with_retry(max_retries=max_retries, **call_kwargs)
@@ -270,6 +275,7 @@ def _completion_with_retry(max_retries: int, **call_kwargs) -> litellm.ModelResp
 
 def _text_to_json(text: str) -> dict:
     """Strip markdown code fences and parse JSON."""
+    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
     text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
     text = re.sub(r"\s*```$", "", text.strip(), flags=re.MULTILINE)
     return json.loads(text)
@@ -307,7 +313,7 @@ def _handle_llm_error(e: Exception, attempt: int, max_retries: int) -> str:
 
     raise
 
-def _is_commercial_api_model(self, model_name: str) -> bool:
+def _is_commercial_api_model(model_name: str) -> bool:
     """Detect if this is a commercial API model vs a self-hosted model
 
     Commercial API models (OpenAI, Claude, etc.) use chat completion APIs and don't need tokenizers.
@@ -346,6 +352,27 @@ def _is_commercial_api_model(self, model_name: str) -> bool:
     model_lower = model_name.lower()
 
     return any(pattern in model_lower for pattern in all_commercial_patterns)
+
+
+
+def _custom_parse_tool_call(msg: str) -> ChatCompletionMessageToolCall:
+    """Parse a tool call from a message."""
+    match = re.search(r"<tool_call>(.*?)</tool_call>", msg, re.DOTALL)
+    if match:
+        try:
+            tool_call = json.loads(match.group(1))
+            function = Function(
+                name=tool_call["name"],
+                arguments=json.dumps(tool_call["arguments"]),
+            )
+            return ChatCompletionMessageToolCall(
+                id=f"call_{uuid.uuid4().hex[:12]}",
+                function=function,
+            )
+        except json.JSONDecodeError:
+            return None
+    return None
+
 
 
 # ── Tool Execution ───────────────────────────────────────────────────────────
