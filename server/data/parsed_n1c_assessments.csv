@@ -2,12 +2,12 @@ hgvs,parsed_outcome,N1C VARIANT outcome,source
 NM_000334.4:c.3891C>A,unable to assess,Unable to assess,n1c_test_variants
 NM_000070.3:c.2105C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_000170.3:c.538C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
-NM_000202.8:c.1122C>T,exon skipping:likely eligible,Likely eligible for splice correction,n1c_test_variants
-NM_000303.3:c.640-15479C>T,exon skipping:eligible,Eligible for splice correction,n1c_test_variants
-NM_000329.3:c.1430A>G,exon skipping:likely eligible;knockdown:likely eligible,Likely eligible for splice correction and knockdown,n1c_test_variants
-NM_000350.3:c.769-784C>T,exon skipping:eligible,Eligible for splice correction,n1c_test_variants
-NM_000391.4:c.225A>G,exon skipping:not eligible,Not eligible for splice correction,n1c_test_variants
-NM_000492.4:c.2989-313A>T,exon skipping:likely eligible,Likely eligible for splice correction,n1c_test_variants
+NM_000202.8:c.1122C>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
+NM_000303.3:c.640-15479C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
+NM_000329.3:c.1430A>G,splice correction:likely eligible;knockdown:likely eligible,Likely eligible for splice correction and knockdown,n1c_test_variants
+NM_000350.3:c.769-784C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
+NM_000391.4:c.225A>G,splice correction:not eligible,Not eligible for splice correction,n1c_test_variants
+NM_000492.4:c.2989-313A>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
 NM_000548.3:c.3598C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
 NM_000561.4:c.1509-26G>A,unable to assess,Unable to assess,n1c_test_variants
 NM_000702.4:c.2936C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
@@ -17,10 +17,10 @@ NM_001040142.2:c.4780T>A,unable to assess,Unable to assess,n1c_assessed_variants
 NM_001040142.2:c.5317G>A,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_001040142.2:c.5636T>C,knockdown:eligible,Eligible for knockdown,n1c_assessed_variants
 NM_001080517.1:c.1967T>G,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_001086521.2:c.195+271C>T,exon skipping:likely eligible,Likely eligible for splice correction,n1c_test_variants
+NM_001086521.2:c.195+271C>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
 NM_001100913.2:c.625G>A,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
 NM_001127222.2:c.4174G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,n1c_test_variants
-NM_001130987.2:c.1276+5G>A,exon skipping:not eligible,Not eligible for splice correction,n1c_assessed_variants
+NM_001130987.2:c.1276+5G>A,splice correction:not eligible,Not eligible for splice correction,n1c_assessed_variants
 NM_001130987.2:c.237-159_342+1237del,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_001130987.2:c.268C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_001130987.2:c.3167G>C,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
@@ -53,7 +53,7 @@ NM_001350626.1:c.1593G>A,exon skipping:likely eligible,Likely eligible for exon 
 NM_003359.3:c.193C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
 NM_003494.4:c.533del,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_003650.4:c.2035-946G>A,unable to assess,Unable to assess,n1c_test_variants
-NM_003907.3:c.1156+13G>A,exon skipping:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
+NM_003907.3:c.1156+13G>A,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
 NM_004211.5:c.296_297del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
 NM_004539.3:c.1600C>T,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
 NM_005027.3:c.1117G>A,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
@@ -67,7 +67,7 @@ NM_015559.3:c.2609G>A,knockdown:unlikely eligible,Unlikely eligible for knockdow
 NM_018026.3:c.607C>T,knockdown:eligible,Eligible for knockdown,gene_steps
 NM_018075.5:c.1025G>A,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
 NM_018075.5:c.289del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
-NM_020366.3:c.1468-128T>G,exon skipping:eligible,Eligible for splice correction,n1c_test_variants
+NM_020366.3:c.1468-128T>G,splice correction:eligible,Eligible for splice correction,n1c_test_variants
 NM_020822.2:c.1283G>A,knockdown:eligible,Eligible for knockdown,gene_steps
 NM_020822.3:c.1283G>A,knockdown:eligible,Eligible for knockdown,gene_steps
 NM_021007.3:c.2558G>A,knockdown:eligible,Eligible for knockdown,n1c_assessed_variants
@@ -77,8 +77,8 @@ NM_024298.5:c.758_778del,unable to assess,Unable to assess,n1c_test_variants
 NM_024312.5:c.1123C>T,unable to assess,Unable to assess,n1c_test_variants
 NM_024312.5:c.3488del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
 NM_024312.5:c.3503_3504del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
-NM_025152.3:c.815-27T>C,exon skipping:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
-NM_133433.4:c.5329-15A>G,exon skipping:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
+NM_025152.3:c.815-27T>C,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
+NM_133433.4:c.5329-15A>G,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
 NM_139318.4:c.980G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
 NM_172107.2:c.998G>A,exon skipping:unlikely eligible;knockdown:unlikely eligible,Unlikely eligible for exon skipping and knockdown,gene_steps
 NM_172107.4:c.841G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
