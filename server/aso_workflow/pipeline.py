@@ -73,13 +73,16 @@ class ASOAssessmentPipeline:
         "wt_upregulation": assess_wt_upregulation,
     }
 
-    def __init__(self, model_name: str | None = None, verbose: bool = True):
+    def __init__(self, model_name: str | None = None, verbose: bool = True, llm_only: bool = False):
         """
         Args:
+            model_name: Optional model name for LLM calls
             verbose: If True, print progress to stdout during pipeline execution
+            llm_only: If True, bypass database calls in all steps; only gene, norm_hgvs, and instruction are added to prompts
         """
         self.model_name = model_name
         self.verbose = verbose
+        self.llm_only = llm_only
 
 
     def run(
@@ -110,7 +113,7 @@ class ASOAssessmentPipeline:
         # ── Step 0: Variant Check ─────────────────────────────────
         if self._should_run("variant_check", steps_to_run):
             self._log("Step 0: Variant Check...")
-            result = self._safe_run_step(run_variant_check, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(run_variant_check, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["variant_check"] = result
 
             if result.classification == EligibilityClassification.UNABLE_TO_ASSESS:
@@ -121,7 +124,7 @@ class ASOAssessmentPipeline:
         # ── ASO Check (existing ASO literature) ────────────────────
         if self._should_run("aso_check", steps_to_run):
             self._log("ASO Check: Searching for existing ASO studies...")
-            result = self._safe_run_step(run_aso_check, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(run_aso_check, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["aso_check"] = result
             self._log(f"  ✓ {result.summary}")
 
@@ -134,14 +137,14 @@ class ASOAssessmentPipeline:
         # ── Step 1: Inheritance Pattern ───────────────────────────
         if self._should_run("inheritance_pattern", steps_to_run):
             self._log("Step 1: Inheritance Pattern...")
-            result = self._safe_run_step(run_inheritance_pattern, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(run_inheritance_pattern, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["inheritance_pattern"] = result
             self._log(f"  ✓ {result.summary}")
 
         # ── Step 2: Pathomechanism + Haploinsufficiency ───────────
         if self._should_run("pathomechanism", steps_to_run):
             self._log("Step 2: Pathomechanism + Haploinsufficiency...")
-            result = self._safe_run_step(run_pathomechanism, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(run_pathomechanism, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["pathomechanism"] = result
 
             if result.classification == EligibilityClassification.UNABLE_TO_ASSESS:
@@ -152,7 +155,7 @@ class ASOAssessmentPipeline:
         # ── Step 3: Splicing Effects ──────────────────────────────
         if self._should_run("splicing_effects", steps_to_run):
             self._log("Step 3: Splicing Effects Evaluation...")
-            result = self._safe_run_step(run_splicing_effects, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(run_splicing_effects, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["splicing_effects"] = result
             self._log(f"  ✓ Splice correction: {result.classification.value}")
             self._log(f"    {result.summary}")
@@ -172,7 +175,7 @@ class ASOAssessmentPipeline:
         # ── Section A: Exon Skipping ──────────────────────────────
         if sections.get("exon_skipping"):
             self._log("Section A: Canonical Exon Skipping...")
-            result = self._safe_run_step(assess_exon_skipping, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(assess_exon_skipping, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["exon_skipping"] = result
             self._log(f"  ✓ Exon skipping: {result.classification.value}")
             self._log(f"    {result.summary}")
@@ -180,7 +183,7 @@ class ASOAssessmentPipeline:
         # ── Section B: Transcript Knockdown ──────────────────────
         if sections.get("knockdown"):
             self._log("Section B: Transcript Knockdown...")
-            result = self._safe_run_step(assess_knockdown, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(assess_knockdown, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["knockdown"] = result
             self._log(f"  ✓ Knockdown: {result.classification.value}")
             self._log(f"    {result.summary}")
@@ -188,7 +191,7 @@ class ASOAssessmentPipeline:
         # ── Section C: WT Upregulation ────────────────────────────
         if sections.get("wt_upregulation"):
             self._log("Section C: Wildtype Allele Upregulation...")
-            result = self._safe_run_step(assess_wt_upregulation, hgvs, context, model_name=self.model_name)
+            result = self._safe_run_step(assess_wt_upregulation, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
             step_results["wt_upregulation"] = result
             self._log(f"  ✓ WT upregulation: {result.classification.value}")
             self._log(f"    {result.summary}")
@@ -236,7 +239,7 @@ class ASOAssessmentPipeline:
             context = AssessmentContext(hgvs_input=hgvs)
 
         step_fn = self.STEP_MAP[step_name]
-        return self._safe_run_step(step_fn, hgvs, context, model_name=self.model_name)
+        return self._safe_run_step(step_fn, hgvs, context, model_name=self.model_name, llm_only=self.llm_only)
     
 
     def make_final_report(
@@ -326,13 +329,13 @@ Please synthesize these results into the final report JSON.
     # Internal helpers
     # ─────────────────────────────────────────────────────────────
 
-    def _safe_run_step(self, step_fn, hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+    def _safe_run_step(self, step_fn, hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
         """
         Run a step function with full error handling.
         Returns an UNABLE_TO_ASSESS result if the step crashes.
         """
         try:
-            return step_fn(hgvs, context, model_name=model_name)
+            return step_fn(hgvs, context, model_name=model_name, llm_only=llm_only)
         except Exception as e:
             tb = traceback.format_exc()
             self._log(f"  ✗ Step crashed: {e}")

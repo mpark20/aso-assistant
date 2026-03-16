@@ -167,6 +167,8 @@ def call_llm(
         call_kwargs["model"] = DEFAULT_MODEL
     if tools:
         call_kwargs["tools"] = tools
+    if not _is_commercial_api_model(call_kwargs["model"]):
+        call_kwargs["api_base"] = "http://localhost:8000/v1"
 
     response = _completion_with_retry(max_retries=max_retries, **call_kwargs)
     _accumulate_usage(usage_acc, model, response)
@@ -304,6 +306,46 @@ def _handle_llm_error(e: Exception, attempt: int, max_retries: int) -> str:
         return f"HTTP {status}: {e}"
 
     raise
+
+def _is_commercial_api_model(self, model_name: str) -> bool:
+    """Detect if this is a commercial API model vs a self-hosted model
+
+    Commercial API models (OpenAI, Claude, etc.) use chat completion APIs and don't need tokenizers.
+    Self-hosted models (vLLM) use text completion APIs and benefit from tokenizers.
+
+    From https://github.com/rlresearch/dr-tulu
+    """
+    # OpenAI model patterns
+    openai_patterns = [
+        "gpt-",
+        "o1-",
+        "text-",
+        "davinci",
+        "curie",
+        "babbage",
+        "ada",
+        "chatgpt",
+        "gpt4",
+        "turbo",
+    ]
+
+    # Anthropic Claude patterns
+    claude_patterns = ["claude-", "sonnet", "haiku", "opus"]
+
+    # Other commercial API patterns
+    commercial_patterns = [
+        "gemini",
+        "palm",  # Google
+        "command",
+        "coral",  # Cohere
+    ]
+
+    all_commercial_patterns = (
+        openai_patterns + claude_patterns + commercial_patterns
+    )
+    model_lower = model_name.lower()
+
+    return any(pattern in model_lower for pattern in all_commercial_patterns)
 
 
 # ── Tool Execution ───────────────────────────────────────────────────────────

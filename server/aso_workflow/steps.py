@@ -23,19 +23,22 @@ from aso_workflow.prompts import SYSTEM_PROMPTS
 
 
 
-def run_variant_check(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def run_variant_check(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Step 0: Variant Check.
 
     Args:
         hgvs: Input HGVS string
         context: Shared assessment context (will be updated in place)
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with classification and metadata
     """
-    # ── Fetch phase ──────────────────────────────────────────────
+    # ── Fetch phase (mutalyzer always runs for norm_hgvs and gene) ──────────────────────────────────────────────
     mutalyzer_data = search_mutalyzer(hgvs)
+    norm_hgvs = mutalyzer_data.get("normalized")
+    gene = mutalyzer_data.get("gene_id")
 
     raw_data = {
         "input_hgvs": hgvs,
@@ -44,7 +47,16 @@ def run_variant_check(hgvs: str, context: AssessmentContext, model_name: str | N
     }
 
     # ── Reason phase ─────────────────────────────────────────────
-    user_msg = f"""Please evaluate this HGVS variant for Step 0 of the N1C VARIANT Guidelines.
+    if llm_only:
+        user_msg = f"""Please evaluate this HGVS variant for Step 0 of the N1C VARIANT Guidelines.
+
+GENE: {gene}
+HGVS: {norm_hgvs}
+
+Apply Step 0 criteria and return your JSON assessment.
+"""
+    else:
+        user_msg = f"""Please evaluate this HGVS variant for Step 0 of the N1C VARIANT Guidelines.
 
 INPUT HGVS: {hgvs}
 
@@ -110,7 +122,7 @@ your JSON assessment.
     )
 
 
-def run_aso_check(hgvs: str, context: AssessmentContext, add_llm_summary: bool = True, model_name: str | None = None) -> StepResult | dict[str, any]:
+def run_aso_check(hgvs: str, context: AssessmentContext, add_llm_summary: bool = True, model_name: str | None = None, llm_only: bool = False) -> StepResult | dict[str, any]:
     """
     Execute Step 4: ASO Check.
 
@@ -118,60 +130,77 @@ def run_aso_check(hgvs: str, context: AssessmentContext, add_llm_summary: bool =
         hgvs: Normalized HGVS string
         context: Shared context
         add_llm_summary: Whether to use an LLM to summarize search results. If False, the raw search results will be returned.
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult if add_llm_summary is True, otherwise Dict[str, Any] containing the raw search results
     """
-    # mutalyzer context
+    # mutalyzer context (always fetched for norm_hgvs and gene)
     if not "mutalyzer" in context.raw_cache:
         context.raw_cache["mutalyzer"] = search_mutalyzer(hgvs)
     mutalyzer_data = context.raw_cache.get("mutalyzer")
     norm_hgvs = mutalyzer_data.get("normalized")
     gene = mutalyzer_data.get("gene_id")
 
-    # clinvar context
-    if not "clinvar" in context.raw_cache:
-        clinical_context = fetch_clinical_context(hgvs)
-        clingen_data = clinical_context.get("clingen")
-        clinvar_data = clinical_context.get("clinvar")
-        context.raw_cache["clingen"] = clingen_data
-        context.raw_cache["clinvar"] = clinvar_data
-    clinvar_data = context.raw_cache.get("clinvar")
-    clingen_data = context.raw_cache.get("clingen")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please assess if there are existing studies relating to the use of ASO therapy for the given gene variant.
+This can mean that: 
+1. an ASO has been developed for the specific variant (see VARIANT LEVEL PAPERS).
+2. an ASO has been developed for an exon skipping approach for an exon this variant is located in (see EXON LEVEL PAPERS). Note that this doesn't necessarily need to mention the exact variant in question, but rather those within the same exon.
+3. a gapmer ASO or siRNA is available for the gene in question or allele specific for a SNP that is in phase (located on the same chromosome copy) with the pathogenic variant.
+IMPORTANT: Exon skipping therapies are important to consider, even though the word "ASO" might not be used in the title.
 
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    gene_level_query = f"{gene} AND ((ASO) OR (AON) OR (antisense oligonucleotide) OR (AOs) OR (siRNA) OR (RNAi) OR (gapmer) or (knockdown))"
+Apply the ASO check criteria and return your JSON assessment.
+"""
+    else:
+        # clinvar context
+        if not "clinvar" in context.raw_cache:
+            clinical_context = fetch_clinical_context(hgvs)
+            clingen_data = clinical_context.get("clingen")
+            clinvar_data = clinical_context.get("clinvar")
+            context.raw_cache["clingen"] = clingen_data
+            context.raw_cache["clinvar"] = clinvar_data
+        clinvar_data = context.raw_cache.get("clinvar")
+        clingen_data = context.raw_cache.get("clingen")
 
-    # gene level ASO search
-    gene_level_lit = _get_pubmed_pmc_results(gene_level_query)
+        gene_level_query = f"{gene} AND ((ASO) OR (AON) OR (antisense oligonucleotide) OR (AOs) OR (siRNA) OR (RNAi) OR (gapmer) or (knockdown))"
 
-    # exon level ASO search
-    exon_level_query = gene_level_query[:]
-    exon_level_lit = None
-    if mutalyzer_data.get("nearest_exon"):
-        exon_level_query += f" AND (exon {mutalyzer_data.get('nearest_exon')})"
-        exon_level_lit = _get_pubmed_pmc_results(exon_level_query)
+        # gene level ASO search
+        gene_level_lit = _get_pubmed_pmc_results(gene_level_query)
 
-    # variant-level ASO search
-    variant_level_query = gene_level_query[:]
-    equiv = mutalyzer_data.get("equivalent_descriptions") or []
-    synonyms = [norm_hgvs] + equiv
-    if clinvar_data and clinvar_data.get("protein_change"):
-        synonyms.append(clinvar_data.get("protein_change"))
-    synonyms = list(set([name.split(':')[-1] for name in synonyms if name]))
-    if len(synonyms) > 0:
-        name_str = " OR ".join(synonyms)
-        variant_level_query += f" AND ({name_str})"
-    variant_level_lit = _get_pubmed_pmc_results(variant_level_query)
-    
-    raw_data = {
-        "variant_level_papers": variant_level_lit,
-        "gene_level_papers": gene_level_lit,
-    }
-    if exon_level_lit is not None:
-        raw_data["exon_level_papers"] = exon_level_lit
-    
-    user_msg = f"""Please assess if there are existing studies relating to the use of ASO therapy for the given gene variant.
+        # exon level ASO search
+        exon_level_query = gene_level_query[:]
+        exon_level_lit = None
+        if mutalyzer_data.get("nearest_exon"):
+            exon_level_query += f" AND (exon {mutalyzer_data.get('nearest_exon')})"
+            exon_level_lit = _get_pubmed_pmc_results(exon_level_query)
+
+        # variant-level ASO search
+        variant_level_query = gene_level_query[:]
+        equiv = mutalyzer_data.get("equivalent_descriptions") or []
+        synonyms = [norm_hgvs] + equiv
+        if clinvar_data and clinvar_data.get("protein_change"):
+            synonyms.append(clinvar_data.get("protein_change"))
+        synonyms = list(set([name.split(':')[-1] for name in synonyms if name]))
+        if len(synonyms) > 0:
+            name_str = " OR ".join(synonyms)
+            variant_level_query += f" AND ({name_str})"
+        variant_level_lit = _get_pubmed_pmc_results(variant_level_query)
+
+        raw_data = {
+            "variant_level_papers": variant_level_lit,
+            "gene_level_papers": gene_level_lit,
+        }
+        if exon_level_lit is not None:
+            raw_data["exon_level_papers"] = exon_level_lit
+        
+        raw_data["search_queries_used"] = [gene_level_query, exon_level_query, variant_level_query]
+
+        user_msg = f"""Please assess if there are existing studies relating to the use of ASO therapy for the given gene variant.
 This can mean that: 
 1. an ASO has been developed for the specific variant (see VARIANT LEVEL PAPERS).
 2. an ASO has been developed for an exon skipping approach for an exon this variant is located in (see EXON LEVEL PAPERS). Note that this doesn't necessarily need to mention the exact variant in question, but rather those within the same exon.
@@ -184,12 +213,12 @@ HGVS: {norm_hgvs}
 CLINVAR DATA:
 {clinvar_data}
 """
-    if variant_level_lit is not None:
-        user_msg += f"VARIANT LEVEL PAPERS:\n{variant_level_lit}\n\n"
-    if exon_level_lit is not None:
-        user_msg += f"EXON LEVEL PAPERS:\n{exon_level_lit}\n\n"
-    if gene_level_lit is not None:
-        user_msg += f"GENE LEVEL PAPERS:\n{gene_level_lit}\n\n"
+        if variant_level_lit is not None:
+            user_msg += f"VARIANT LEVEL PAPERS:\n{variant_level_lit}\n\n"
+        if exon_level_lit is not None:
+            user_msg += f"EXON LEVEL PAPERS:\n{exon_level_lit}\n\n"
+        if gene_level_lit is not None:
+            user_msg += f"GENE LEVEL PAPERS:\n{gene_level_lit}\n\n"
     
     if not add_llm_summary:
         return raw_data
@@ -198,7 +227,7 @@ CLINVAR DATA:
         "system_prompt": SYSTEM_PROMPTS["aso_check"],
         "user_message": user_msg,
         "expect_json": True,
-        "tools": [FETCH_AND_EXTRACT_TOOL],
+        "tools": [FETCH_AND_EXTRACT_TOOL] if not llm_only else None,
     }
     if model_name is not None:
         call_kwargs["model"] = model_name
@@ -236,7 +265,6 @@ CLINVAR DATA:
         reasoning=result.get("reasoning", ""),
         data_used=raw_data,
         metadata={
-            "search_queries_used": [gene_level_query, exon_level_query, variant_level_query],
             "evidence_snippets": result.get("evidence_snippets", []),
             "aso_specificity": result.get("aso_specificity", "unknown"),
             "approach_used": result.get("approach_used", "unknown"),
@@ -249,13 +277,14 @@ CLINVAR DATA:
     )
 
 
-def run_inheritance_pattern(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def run_inheritance_pattern(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Step 1: Inheritance Pattern Assessment.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context (gene_id must be populated from Step 0)
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with inheritance classification
@@ -266,39 +295,43 @@ def run_inheritance_pattern(hgvs: str, context: AssessmentContext, model_name: s
     norm_hgvs = mutalyzer_data.get("normalized")
     gene = mutalyzer_data.get("gene_id")
 
-    if not "clinvar" in context.raw_cache:
-        clinical_context = fetch_clinical_context(hgvs)
-        clingen_data = clinical_context.get("clingen")
-        clinvar_data = clinical_context.get("clinvar")
-        context.raw_cache["clingen"] = clingen_data
-        context.raw_cache["clinvar"] = clinvar_data
-    clinvar_data = context.raw_cache.get("clinvar")
-    clingen_data = context.raw_cache.get("clingen")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please assess the inheritance pattern for this variant (Step 1 of N1C Guidelines).
 
-    # ── Fetch phase ──────────────────────────────────────────────
-    clinical_context = fetch_clinical_context(hgvs)
-    clinvar_data = clinical_context.get("clinvar")
-    clingen_data = clinical_context.get("clingen")
-    
-    gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
-    # TODO: remove this, add it into the call_llm function
-    web_results = search_serper(gene + " inheritance pattern")
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    raw_data = {
-        "clinvar": clinvar_data,
-        "gnomad_summary": gnomad_data,
-        "web_search": web_results,
-    }
+Apply Step 1 criteria and return your JSON assessment.
+"""
+    else:
+        if not "clinvar" in context.raw_cache:
+            clinical_context = fetch_clinical_context(hgvs)
+            clingen_data = clinical_context.get("clingen")
+            clinvar_data = clinical_context.get("clinvar")
+            context.raw_cache["clingen"] = clingen_data
+            context.raw_cache["clinvar"] = clinvar_data
+        clinvar_data = context.raw_cache.get("clinvar")
+        clingen_data = context.raw_cache.get("clingen")
 
-    # Cache for downstream use
-    if clinvar_data:
-        context.raw_cache["clinvar"] = clinvar_data
-    if clingen_data:
-        context.raw_cache["clingen"] = clingen_data
-    if gnomad_data:
-        context.raw_cache["gnomad"] = gnomad_data
+        gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
+        web_results = search_serper(gene + " inheritance pattern")
 
-    user_msg = f"""Please assess the inheritance pattern for this variant (Step 1 of N1C Guidelines).
+        raw_data = {
+            "clinvar": clinvar_data,
+            "gnomad_summary": gnomad_data,
+            "web_search": web_results,
+        }
+
+        # Cache for downstream use
+        if clinvar_data:
+            context.raw_cache["clinvar"] = clinvar_data
+        if clingen_data:
+            context.raw_cache["clingen"] = clingen_data
+        if gnomad_data:
+            context.raw_cache["gnomad"] = gnomad_data
+
+        user_msg = f"""Please assess the inheritance pattern for this variant (Step 1 of N1C Guidelines).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -321,7 +354,7 @@ get a summary of the full text in relation to a research question of interest.
         "system_prompt": SYSTEM_PROMPTS["inheritance_pattern"],
         "user_message": user_msg,
         "expect_json": True,
-        "tools": [FETCH_AND_EXTRACT_TOOL],
+        "tools": [FETCH_AND_EXTRACT_TOOL] if not llm_only else None,
     }
     if model_name is not None:
         call_kwargs["model"] = model_name
@@ -365,13 +398,14 @@ get a summary of the full text in relation to a research question of interest.
     )
 
 
-def run_pathomechanism(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def run_pathomechanism(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Step 2: Pathomechanism and Haploinsufficiency Assessment.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with pathomechanism and haploinsufficiency data
@@ -382,46 +416,52 @@ def run_pathomechanism(hgvs: str, context: AssessmentContext, model_name: str | 
     gene = mutalyzer_data.get("gene_id")
     norm_hgvs = mutalyzer_data.get("normalized")
 
-    if not "clinvar" in context.raw_cache and not "clingen" in context.raw_cache:
-        clinical_context = fetch_clinical_context(hgvs)
-        clingen_data = clinical_context.get("clingen")
-        clinvar_data = clinical_context.get("clinvar")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please assess pathomechanism and haploinsufficiency for this variant (Step 2).
 
-        context.raw_cache["clingen"] = clingen_data
-        context.raw_cache["clinvar"] = clinvar_data
-    
-    clinvar_data = context.raw_cache.get("clinvar")
-    clingen_data = context.raw_cache.get("clingen")
+GENE: {gene}
+HGVS: {norm_hgvs}
 
+Apply Step 2 criteria and return your JSON assessment.
+"""
+    else:
+        if not "clinvar" in context.raw_cache and not "clingen" in context.raw_cache:
+            clinical_context = fetch_clinical_context(hgvs)
+            clingen_data = clinical_context.get("clingen")
+            clinvar_data = clinical_context.get("clinvar")
 
-    # ── Fetch phase ──────────────────────────────────────────────
-    gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
+            context.raw_cache["clingen"] = clingen_data
+            context.raw_cache["clinvar"] = clinvar_data
 
-    # Search for occurences in pubmed, accounting for variant synonyms
-    patho_str = " OR ".join(["(loss of function)", "(gain of function)", "(dominant negative)", "(loss-of-function)", "(gain-of-function)", "(dominant-negative)"])
-    search_query = f"{gene} AND ({patho_str})"
-    equiv = mutalyzer_data.get("equivalent_descriptions") or []
-    synonyms = [norm_hgvs] + equiv
-    if clinvar_data and clinvar_data.get("protein_change"):
-        synonyms.append(clinvar_data.get("protein_change"))
-    synonyms = list(set([name.split(':')[-1] for name in synonyms if name]))
-    if len(synonyms) > 0:
-        name_str = " OR ".join([f"({s})" for s in synonyms])
-        search_query += f" AND ({name_str})"
-    pubmed_results = _get_pubmed_pmc_results(search_query)
+        clinvar_data = context.raw_cache.get("clinvar")
+        clingen_data = context.raw_cache.get("clingen")
 
-    raw_data = {
-        "clingen": clingen_data,
-        "gnomad_sample": gnomad_data,
-        "clinvar": clinvar_data,
-        "pubmed": pubmed_results,
-    }
+        gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
 
-    # ── Reason phase ─────────────────────────────────────────────
-    # Extract inheritance info from context for better reasoning
-    inheritance_info = f"Inheritance pattern: {context.inheritance_pattern.value if context.inheritance_pattern else 'unknown'}"
+        # Search for occurences in pubmed, accounting for variant synonyms
+        patho_str = " OR ".join(["(loss of function)", "(gain of function)", "(dominant negative)", "(loss-of-function)", "(gain-of-function)", "(dominant-negative)"])
+        search_query = f"{gene} AND ({patho_str})"
+        equiv = mutalyzer_data.get("equivalent_descriptions") or []
+        synonyms = [norm_hgvs] + equiv
+        if clinvar_data and clinvar_data.get("protein_change"):
+            synonyms.append(clinvar_data.get("protein_change"))
+        synonyms = list(set([name.split(':')[-1] for name in synonyms if name]))
+        if len(synonyms) > 0:
+            name_str = " OR ".join([f"({s})" for s in synonyms])
+            search_query += f" AND ({name_str})"
+        pubmed_results = _get_pubmed_pmc_results(search_query)
 
-    user_msg = f"""Please assess pathomechanism and haploinsufficiency for this variant (Step 2).
+        raw_data = {
+            "clingen": clingen_data,
+            "gnomad_sample": gnomad_data,
+            "clinvar": clinvar_data,
+            "pubmed": pubmed_results,
+        }
+
+        inheritance_info = f"Inheritance pattern: {context.inheritance_pattern.value if context.inheritance_pattern else 'unknown'}"
+
+        user_msg = f"""Please assess pathomechanism and haploinsufficiency for this variant (Step 2).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -448,7 +488,7 @@ to get a summary of the full text in relation to a research question of interest
         "system_prompt": SYSTEM_PROMPTS["pathomechanism"],
         "user_message": user_msg,
         "expect_json": True,
-        "tools": [FETCH_AND_EXTRACT_TOOL],
+        "tools": [FETCH_AND_EXTRACT_TOOL] if not llm_only else None,
     }
     if model_name is not None:
         call_kwargs["model"] = model_name
@@ -495,53 +535,65 @@ to get a summary of the full text in relation to a research question of interest
         token_usage=usage,
     )
 
-def run_splicing_effects(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def run_splicing_effects(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Step 3: Splicing Effects Evaluation.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with splice correction classification
     """
-    # ── Fetch phase ──────────────────────────────────────────────
     if not "mutalyzer" in context.raw_cache:
         context.raw_cache["mutalyzer"] = search_mutalyzer(hgvs)
     mutalyzer_data = context.raw_cache.get("mutalyzer")
     gene = mutalyzer_data.get("gene_id")
     norm_hgvs = mutalyzer_data.get("normalized")
 
-    if not "clinvar" in context.raw_cache:
-        clinical_context = fetch_clinical_context(hgvs)
-        clinvar_data = clinical_context.get("clinvar")
-        context.raw_cache["clinvar"] = clinvar_data
-    clinvar_data = context.raw_cache.get("clinvar")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please evaluate splicing effects for this variant (Step 3 of N1C Guidelines).
 
-    if not "ensembl_vep" in context.raw_cache:
-        context.raw_cache["ensembl_vep"] = search_ensembl_vep(norm_hgvs)
-    vep_data = context.raw_cache.get("ensembl_vep")
-    aso_check = context.raw_cache.get("aso_check")
-    
-    raw_data = {
-        "vep": vep_data,
-        "aso_check": aso_check,
-    }
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    cached_info = ""
-    if context.inheritance_pattern:
-        cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
-    if context.pathomechanism:
-        cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
-    if len(cached_info) > 0:
-        cached_info = "\n" + cached_info + "\n"
+Important: Only RNAseq, qPCR, or cDNA from patient-derived cells counts as sufficient 
+functional evidence. In silico predictions are NOT sufficient.
 
-    if aso_check:
-        cached_info += f"Summary of existing ASO literature: {aso_check}\n"
+Apply Step 3 criteria (Table 3) and return your JSON assessment.
+"""
+    else:
+        if not "clinvar" in context.raw_cache:
+            clinical_context = fetch_clinical_context(hgvs)
+            clinvar_data = clinical_context.get("clinvar")
+            context.raw_cache["clinvar"] = clinvar_data
+        clinvar_data = context.raw_cache.get("clinvar")
 
-    # ── Reason phase ─────────────────────────────────────────────
-    user_msg = f"""Please evaluate splicing effects for this variant (Step 3 of N1C Guidelines).
+        if not "ensembl_vep" in context.raw_cache:
+            context.raw_cache["ensembl_vep"] = search_ensembl_vep(norm_hgvs)
+        vep_data = context.raw_cache.get("ensembl_vep")
+        aso_check = context.raw_cache.get("aso_check")
+
+        raw_data = {
+            "vep": vep_data,
+            "aso_check": aso_check,
+        }
+
+        cached_info = ""
+        if context.inheritance_pattern:
+            cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
+        if context.pathomechanism:
+            cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
+        if len(cached_info) > 0:
+            cached_info = "\n" + cached_info + "\n"
+
+        if aso_check:
+            cached_info += f"Summary of existing ASO literature: {aso_check}\n"
+
+        user_msg = f"""Please evaluate splicing effects for this variant (Step 3 of N1C Guidelines).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -740,13 +792,14 @@ def explain_routing(context: AssessmentContext) -> str:
 
 
 
-def assess_exon_skipping(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def assess_exon_skipping(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Section A: Canonical Exon Skipping assessment.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with exon skipping classification
@@ -757,64 +810,73 @@ def assess_exon_skipping(hgvs: str, context: AssessmentContext, model_name: str 
     gene = mutalyzer_data.get("gene_id")
     norm_hgvs = mutalyzer_data.get("normalized")
 
-    if not "clinvar" in context.raw_cache:
-        clinical_context = fetch_clinical_context(hgvs)
-        clinvar_data = clinical_context.get("clinvar")
-        context.raw_cache["clinvar"] = clinvar_data
-    clinvar_data = context.raw_cache.get("clinvar")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please evaluate canonical exon skipping eligibility (Section A of N1C Guidelines).
 
-    # ── Fetch phase ──────────────────────────────────────────────
-    transcript_ctx = fetch_transcript_context(norm_hgvs)
-    protein_ctx = fetch_protein_context(norm_hgvs)
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    aso_lit = {"error": "Web search not available."}
+Apply Section A criteria (Table 4) step-by-step and return your JSON assessment.
+Remember: assessment is at the EXON level, not the variant level.
+"""
+    else:
+        if not "clinvar" in context.raw_cache:
+            clinical_context = fetch_clinical_context(hgvs)
+            clinvar_data = clinical_context.get("clinvar")
+            context.raw_cache["clinvar"] = clinvar_data
+        clinvar_data = context.raw_cache.get("clinvar")
 
-    raw_data = {
-        "transcript_context": transcript_ctx,
-        "protein_context": protein_ctx,
-        "aso_literature": aso_lit
-    }
+        if not "aso_check_pubmed" in context.raw_cache:
+            run_aso_check(hgvs, context, model_name=model_name)
+        aso_lit = context.raw_cache.get("aso_check_pubmed", {}).get("exon_level_papers", [])
 
-    # ── Build context summary for LLM ────────────────────────────
-    tx_summary = "Transcript context unavailable."
-    if transcript_ctx and isinstance(transcript_ctx, dict):
-        tx_summary = (
-            f"Transcript ID: {transcript_ctx.get('transcript_id')}\n"
-            f"Chromosome: {transcript_ctx.get('chromosome')}\n"
-            f"Location: {transcript_ctx.get('location')}\n"
-            f"Total exons in transcript: {transcript_ctx.get('transcript_exons')}\n"
-        )
-        if transcript_ctx.get("location") == "intronic":
-            tx_summary += f"Offset from nearest coding position: {transcript_ctx.get('offset')}\n"
-            tx_summary += f"Nearest exon number: {transcript_ctx.get('exon_number')}\n"
-        else:
-            tx_summary += f"Exon number: {transcript_ctx.get('exon_number')}\n"
-        tx_summary += "Flanking exons (with sequences):\n" + json.dumps(transcript_ctx.get("flanking_exons", []), indent=2)
-    
-    protein_summary = "Protein domain context unavailable."
-    if protein_ctx and isinstance(protein_ctx, dict):
-        protein_summary = (
-            f"Gene: {protein_ctx.get('gene_id')}\n"
-            f"UniProt ID: {protein_ctx.get('uniprot_id')}\n"
-            f"Protein length: {protein_ctx.get('protein_aa_length')} aa\n"
-            f"Exon AA range: {protein_ctx.get('exon_aa_range')}\n"
-            f"Domains overlapping exon:\n"
-            + json.dumps(protein_ctx.get("domains", []), indent=2)
-        )
-    
-    # TODO: these are all necessary and should be re-ran if not present in the cache
-    cached_info = ""
-    if context.inheritance_pattern:
-        cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
-    if context.pathomechanism:
-        cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
-    if context.is_haploinsufficient:
-        cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
-    if len(cached_info) > 0:
-        cached_info = "\n" + cached_info + "\n"
+        transcript_ctx = fetch_transcript_context(norm_hgvs)
+        protein_ctx = fetch_protein_context(norm_hgvs)
 
-    # ── Reason phase ─────────────────────────────────────────────
-    user_msg = f"""Please evaluate canonical exon skipping eligibility (Section A of N1C Guidelines).
+        raw_data = {
+            "transcript_context": transcript_ctx,
+            "protein_context": protein_ctx,
+            "aso_literature": aso_lit
+        }
+
+        tx_summary = "Transcript context unavailable."
+        if transcript_ctx and isinstance(transcript_ctx, dict):
+            tx_summary = (
+                f"Transcript ID: {transcript_ctx.get('transcript_id')}\n"
+                f"Chromosome: {transcript_ctx.get('chromosome')}\n"
+                f"Location: {transcript_ctx.get('location')}\n"
+                f"Total exons in transcript: {transcript_ctx.get('transcript_exons')}\n"
+            )
+            if transcript_ctx.get("location") == "intronic":
+                tx_summary += f"Offset from nearest coding position: {transcript_ctx.get('offset')}\n"
+                tx_summary += f"Nearest exon number: {transcript_ctx.get('exon_number')}\n"
+            else:
+                tx_summary += f"Exon number: {transcript_ctx.get('exon_number')}\n"
+            tx_summary += "Flanking exons (with sequences):\n" + json.dumps(transcript_ctx.get("flanking_exons", []), indent=2)
+
+        protein_summary = "Protein domain context unavailable."
+        if protein_ctx and isinstance(protein_ctx, dict):
+            protein_summary = (
+                f"Gene: {protein_ctx.get('gene_id')}\n"
+                f"UniProt ID: {protein_ctx.get('uniprot_id')}\n"
+                f"Protein length: {protein_ctx.get('protein_aa_length')} aa\n"
+                f"Exon AA range: {protein_ctx.get('exon_aa_range')}\n"
+                f"Domains overlapping exon:\n"
+                + json.dumps(protein_ctx.get("domains", []), indent=2)
+            )
+
+        cached_info = ""
+        if context.inheritance_pattern:
+            cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
+        if context.pathomechanism:
+            cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
+        if context.is_haploinsufficient:
+            cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
+        if len(cached_info) > 0:
+            cached_info = "\n" + cached_info + "\n"
+
+        user_msg = f"""Please evaluate canonical exon skipping eligibility (Section A of N1C Guidelines).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -830,14 +892,18 @@ PROTEIN DOMAIN CONTEXT:
 CLINVAR DATA:
 {clinvar_data}
 
+PUBMED SEARCH RESULTS:
+{aso_lit}
+
 Apply Section A criteria (Table 4) step-by-step and return your JSON assessment.
-Remember: assessment is at the EXON level, not the variant level.
+Remember: assessment is at the EXON level, not just the variant level.
 """
 
     call_kwargs: dict[str, Any] = {
         "system_prompt": SYSTEM_PROMPTS["exon_skipping"],
         "user_message": user_msg,
         "expect_json": True,
+        "tools": [FETCH_AND_EXTRACT_TOOL] if not llm_only else None,
     }
     if model_name is not None:
         call_kwargs["model"] = model_name
@@ -889,13 +955,14 @@ Remember: assessment is at the EXON level, not the variant level.
     )
 
 
-def assess_knockdown(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def assess_knockdown(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Section B: Transcript Knockdown assessment.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with knockdown eligibility classification
@@ -906,36 +973,45 @@ def assess_knockdown(hgvs: str, context: AssessmentContext, model_name: str | No
     gene = mutalyzer_data.get("gene_id")
     norm_hgvs = mutalyzer_data.get("normalized")
 
-    # ── Fetch phase ──────────────────────────────────────────────
-    # ClinGen and gnomAD may already be cached from Step 2
-    if not context.raw_cache.get("clingen"):
-        clinical_context = fetch_clinical_context(hgvs)
-        clingen_data = clinical_context.get("clingen")
-        context.raw_cache["clingen"] = clingen_data
-    clingen_data = context.raw_cache.get("clingen")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please evaluate transcript knockdown eligibility (Section B of N1C Guidelines).
 
-    gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    aso_lit = {"error": "Web search not available."}
+Apply Section B criteria (Table 5) and return your JSON assessment.
+"""
+    else:
+        if not context.raw_cache.get("clingen"):
+            clinical_context = fetch_clinical_context(hgvs)
+            clingen_data = clinical_context.get("clingen")
+            context.raw_cache["clingen"] = clingen_data
+        clingen_data = context.raw_cache.get("clingen")
 
-    raw_data = {
-        "clingen": clingen_data,
-        "gnomad_sample": gnomad_data,
-        "aso_literature": aso_lit,
-    }
+        gnomad_data = search_gnomad(gene, hgvsc=norm_hgvs)
 
-    cached_info = ""
-    if context.inheritance_pattern:
-        cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
-    if context.pathomechanism:
-        cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
-    if context.is_haploinsufficient:
-        cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
-    if len(cached_info) > 0:
-        cached_info = "\n" + cached_info + "\n"
-    
-    # ── Reason phase ─────────────────────────────────────────────
-    user_msg = f"""Please evaluate transcript knockdown eligibility (Section B of N1C Guidelines).
+        # TODO: add this back in??
+        # if not "aso_check_pubmed" in context.raw_cache:
+        #     run_aso_check(hgvs, context, model_name=model_name)
+        # aso_lit = context.raw_cache.get("aso_check_pubmed", {}).get("variant_level_papers", [])
+
+        raw_data = {
+            "clingen": clingen_data,
+            "gnomad_sample": gnomad_data,
+        }
+
+        cached_info = ""
+        if context.inheritance_pattern:
+            cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
+        if context.pathomechanism:
+            cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
+        if context.is_haploinsufficient:
+            cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
+        if len(cached_info) > 0:
+            cached_info = "\n" + cached_info + "\n"
+
+        user_msg = f"""Please evaluate transcript knockdown eligibility (Section B of N1C Guidelines).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -999,13 +1075,14 @@ Apply Section B criteria (Table 5) and return your JSON assessment.
         token_usage=usage,
     )
 
-def assess_wt_upregulation(hgvs: str, context: AssessmentContext, model_name: str | None = None) -> StepResult:
+def assess_wt_upregulation(hgvs: str, context: AssessmentContext, model_name: str | None = None, llm_only: bool = False) -> StepResult:
     """
     Execute Section C: Wildtype Allele Upregulation assessment.
 
     Args:
         hgvs: Normalized HGVS string
         context: Shared context
+        llm_only: If True, bypass database calls and only add gene, norm_hgvs, and instruction to the prompt
 
     Returns:
         StepResult with WT upregulation assessment
@@ -1016,44 +1093,50 @@ def assess_wt_upregulation(hgvs: str, context: AssessmentContext, model_name: st
     gene = mutalyzer_data.get("gene_id")
     norm_hgvs = mutalyzer_data.get("normalized")
 
-    if not "aso_check_pubmed" in context.raw_cache:
-        aso_check_result = run_aso_check(hgvs, context, model_name=model_name)
-    aso_lit = context.raw_cache.get("aso_check_pubmed")
+    if llm_only:
+        raw_data = {}
+        user_msg = f"""Please evaluate wildtype allele upregulation strategies (Section C of N1C Guidelines).
 
-    # ── Fetch phase ──────────────────────────────────────────────
-    # Ensembl VEP
-    if not "ensembl_vep" in context.raw_cache:
-        context.raw_cache["ensembl_vep"] = search_ensembl_vep(norm_hgvs)
-    vep_data = context.raw_cache.get("ensembl_vep")
+GENE: {gene}
+HGVS: {norm_hgvs}
 
-    # Search recommended supplemental tables for TANGO/poison exon/upregulation regions in the
-    alt_splice_data = search_alt_splicing_events(gene)
+Apply Section C criteria and return your JSON assessment.
+Note: This section does NOT classify as likely/unlikely eligible - only "eligible" if an upregulation strategy has already been well established in the literature.
+"""
+    else:
+        if not "aso_check_pubmed" in context.raw_cache:
+            run_aso_check(hgvs, context, model_name=model_name)
+        aso_lit = context.raw_cache.get("aso_check_pubmed")
 
-    # Search for related papers
-    tango_query = f"{gene} AND ((poison exon) OR (TANGO) OR (antisense transcript) OR (uORF))"
-    tango_papers = _get_pubmed_pmc_results(tango_query)
+        if not "ensembl_vep" in context.raw_cache:
+            context.raw_cache["ensembl_vep"] = search_ensembl_vep(norm_hgvs)
+        vep_data = context.raw_cache.get("ensembl_vep")
 
-    raw_data = {
-        "ensembl_vep": vep_data,
-        "alt_splice_data": alt_splice_data,
-        "tango_specific_literature": tango_papers,
-        "general_aso_literature": aso_lit,
-    }
+        alt_splice_data = search_alt_splicing_events(gene)
 
-    cached_info = ""
-    if context.inheritance_pattern:
-        cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
-    if context.pathomechanism:
-        cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
-    if context.is_haploinsufficient:
-        cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
-    if context.haploinsufficiency_evidence:
-        cached_info += f"Haploinsufficiency evidence: {context.haploinsufficiency_evidence}\n"
-    if len(cached_info) > 0:
-        cached_info = "\n" + cached_info + "\n"
+        tango_query = f"{gene} AND ((poison exon) OR (TANGO) OR (antisense transcript) OR (uORF))"
+        tango_papers = _get_pubmed_pmc_results(tango_query)
 
-    # ── Reason phase ─────────────────────────────────────────────
-    user_msg = f"""Please evaluate wildtype allele upregulation strategies (Section C of N1C Guidelines).
+        raw_data = {
+            "ensembl_vep": vep_data,
+            "alt_splice_data": alt_splice_data,
+            "tango_specific_literature": tango_papers,
+            "general_aso_literature": aso_lit,
+        }
+
+        cached_info = ""
+        if context.inheritance_pattern:
+            cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
+        if context.pathomechanism:
+            cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
+        if context.is_haploinsufficient:
+            cached_info += f"Haploinsufficient gene: {context.is_haploinsufficient}\n"
+        if context.haploinsufficiency_evidence:
+            cached_info += f"Haploinsufficiency evidence: {context.haploinsufficiency_evidence}\n"
+        if len(cached_info) > 0:
+            cached_info = "\n" + cached_info + "\n"
+
+        user_msg = f"""Please evaluate wildtype allele upregulation strategies (Section C of N1C Guidelines).
 
 GENE: {gene}
 HGVS: {norm_hgvs}
@@ -1083,6 +1166,7 @@ Note: This section does NOT classify as likely/unlikely eligible - only "eligibl
         "system_prompt": SYSTEM_PROMPTS["wt_upregulation"],
         "user_message": user_msg,
         "expect_json": True,
+        "tools": [FETCH_AND_EXTRACT_TOOL] if not llm_only else None,
     }
     if model_name is not None:
         call_kwargs["model"] = model_name

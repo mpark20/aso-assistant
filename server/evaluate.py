@@ -74,15 +74,18 @@ def main(
     model_name: str = None,
     num_examples: int = None,
     verbose: bool = True,
+    llm_only: bool = False,
 ) -> None:
     """Run pipeline on each variant, writing results to disk as processed."""
-    output_dir = f"outputs_{model_name.split('/')[-1]}"
+    output_dir = f"outputs/{model_name.split('/')[-1]}"
+    if llm_only:
+        output_dir = f"outputs/{model_name.split('/')[-1]}__llm-only"
     os.makedirs(output_dir, exist_ok=True)
 
     df = load_variants(input_file)
     if num_examples:
         df = df.head(num_examples)
-    pipeline = ASOAssessmentPipeline(model_name=model_name, verbose=verbose)
+    pipeline = ASOAssessmentPipeline(model_name=model_name, verbose=verbose, llm_only=llm_only)
 
     total = len(df)
     skipped = 0
@@ -177,6 +180,11 @@ if __name__ == "__main__":
         "-n", "--num-examples",
         type=int, default=None, help="Number of examples to evaluate (default: all)"
     )
+    parser.add_argument(
+        "--llm-only",
+        action="store_true",
+        help="Bypass database calls; only add gene, norm_hgvs, and instruction to prompts (for ablation experiments)",
+    )
     args = parser.parse_args()
 
     if not args.data_file.exists():
@@ -190,4 +198,5 @@ if __name__ == "__main__":
         model_name=args.model_name,
         num_examples=args.num_examples,
         verbose=not args.quiet,
+        llm_only=args.llm_only,
     )
