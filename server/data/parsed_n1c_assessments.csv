@@ -1,10 +1,10 @@
 hgvs,parsed_outcome,N1C VARIANT outcome,source
+NM_000329.3:c.1430A>G,splice correction:likely eligible;knockdown:likely eligible,Likely eligible for splice correction and knockdown,n1c_test_variants
 NM_000334.4:c.3891C>A,unable to assess,Unable to assess,n1c_test_variants
 NM_000070.3:c.2105C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
 NM_000170.3:c.538C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
 NM_000202.8:c.1122C>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
 NM_000303.3:c.640-15479C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
-NM_000329.3:c.1430A>G,splice correction:likely eligible;knockdown:likely eligible,Likely eligible for splice correction and knockdown,n1c_test_variants
 NM_000350.3:c.769-784C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
 NM_000391.4:c.225A>G,splice correction:not eligible,Not eligible for splice correction,n1c_test_variants
 NM_000492.4:c.2989-313A>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
