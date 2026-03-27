@@ -58,7 +58,7 @@ def parse_outcome_str(outcome_str: str) -> dict:
     All therapies are considered "unable to assess" if the outcome_str = "unable to assess".
     """
     parts = outcome_str.split(";")
-    parsed = {k:"not_applicable" for k in ["knockdown", "splice_correction", "transcript_knockdown", "wt_upregulation", "exon_skipping"]}
+    parsed = {k:"not_applicable" for k in ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]}
     if outcome_str == "unable to assess":
         return {k:"unable_to_assess" for k in parsed.keys()}
     for part in parts:
@@ -66,6 +66,10 @@ def parse_outcome_str(outcome_str: str) -> dict:
             # add underscores to match the automated pipeline output format
             key, value = part.split(':')
             parsed[key.strip().replace(" ", "_")] = value.strip().replace(" ", "_")
+    
+    if "knockdown" in parsed:
+        kd = parsed.pop("knockdown")
+        parsed["transcript_knockdown"] = kd
     return parsed
 
 def score_result(true_outcome: dict, pred_outcome: dict) -> dict:
