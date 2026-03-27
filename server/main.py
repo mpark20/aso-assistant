@@ -1,24 +1,33 @@
-from aso_workflow.utils.tool_llm import ToolLLM
-from aso_workflow.utils.tools import (
-    ScholarSearchTool,
-    WebSearchTool,
-    BrowseWebpageTool,
-    NCBISearchTool,
-    UniProtSearchTool,
-    BrowseUniProtTool,
-)
-from aso_workflow.utils.apis import search_mutalyzer
-from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
-from pathlib import Path
-import json
+"""
+FastAPI service for the N1C VARIANT ASO assessment pipeline.
 
-from fastapi import Cookie, Depends, FastAPI, Form, HTTPException, Request, status
+Each pipeline phase exposed as its own endpoint so clients can run steps
+serially and pass the accumulated AssessmentContext between calls.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, fields
+from typing import Any, Optional
+
+from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
+from aso_workflow.data_model import (
+    AssessmentContext,
+    ASOAssessmentReport,
+    EligibilityClassification,
+    InheritancePattern,
+    Pathomechanism,
+    StepResult,
+)
+from aso_workflow.pipeline import ASOAssessmentPipeline
 
-app = FastAPI(title="ASO Variant Assistant")
+app = FastAPI(
+    title="ASO Variant Assistant",
+    description="HTTP API for ASOAssessmentPipeline steps and full runs.",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,117 +36,214 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-MODEL = "gpt-4o"
-MAX_TOOL_CALLS = 10
-MAX_TOKENS = 16000
+# Mirrors ASOAssessmentPipeline.STEP_MAP keys (single source for route list)
+PIPELINE_STEP_NAMES: tuple[str, ...] = tuple(ASOAssessmentPipeline.STEP_MAP.keys())
 
-with open(Path(__file__).parent / "aso_workflow" / "system_prompt.txt", "r") as f:
-    SYSTEM_PROMPT_TMPL = f.read()
 
-with open(Path(__file__).parent / "aso_workflow" / "prompts.json", "r") as f:
-    PROTOCOL = json.load(f)
+class PipelineOptions(BaseModel):
+    """LLM and data-source options; matches ASOAssessmentPipeline constructor."""
 
-class Variant(BaseModel):
-    transcript: str
-    coding_change: str
-    gene: str
+    model_name: Optional[str] = "gemini/gemini-3.1-flash-lite-preview"
+    llm_only: bool = False
+    use_web_search: bool = False
+    verbose: bool = False
 
-class WorkflowRequest(BaseModel):
-    step: str
-    variant: Variant
 
-class WorkflowResponse(BaseModel):
-    generated_text: str
-    total_tokens: int
-    tool_call_count: int
-    stopped_reason: str
-    tool_calls: List[Dict[str, Any]]
+class StepRequest(BaseModel):
+    """Run a single pipeline step."""
 
-@app.post("/chat")
-async def run_workflow(request: WorkflowRequest, stream: bool = False):
-    # get background variant info
-    hgvs = request.variant.transcript + ":" + request.variant.coding_change
-    variant_info = search_mutalyzer(hgvs)
-    variant_info["gene"] = request.variant.gene
+    hgvs: str = Field(..., description='e.g. "NM_000350.3(ABCA4):c.2626C>T"')
+    context: Optional[dict[str, Any]] = Field(
+        None,
+        description="Serialized AssessmentContext from a prior step; omit to start fresh.",
+    )
+    options: Optional[PipelineOptions] = None
 
-    # get tool descriptions
-    tools = [NCBISearchTool(), UniProtSearchTool(), BrowseUniProtTool(), WebSearchTool(), BrowseWebpageTool(), ScholarSearchTool()]
-    tool_descriptions = ""
-    for tool in tools:
-        schema = tool.get_description()
-        name, desc = schema.get("name"), schema.pop("description")
-        tool_descriptions += f"Tool: {name}\nDescription: {desc}\n"
-        if schema.get("required_parameters"):
-            tool_descriptions += f"Required Parameters: {schema.pop('required_parameters')}\n"
-        tool_descriptions += f"Schema:\n{json.dumps(schema, indent=2)}\n\n"
-    
-    # assemble prompt
-    system_prompt = SYSTEM_PROMPT_TMPL.replace("<<tool_descriptions>>", tool_descriptions)
-    curr_step = PROTOCOL[request.step]
-    prompt_tmpl = curr_step["prompt"]
-    prompt = prompt_tmpl
-    prompt = prompt.format(variant=hgvs, gene=request.variant.gene)
-    if curr_step.get("additional_instructions"):
-        prompt += "\nAdditional Instructions: " + curr_step["additional_instructions"]
-    
-    prompt += "\nHere's some background info on the variant of interest:\n" + json.dumps(variant_info, indent=2)
-    print(prompt)
 
-    # call LLM with tools
-    tool_llm = ToolLLM(
-        model=MODEL,
-        tools=tools,
+class RoutingRequest(BaseModel):
+    """Compute Step 4 section routing from the current context (no LLM)."""
+
+    hgvs: str
+    context: Optional[dict[str, Any]] = None
+    options: Optional[PipelineOptions] = None
+
+
+class FinalReportRequest(BaseModel):
+    """Synthesize the final report from completed step results."""
+
+    hgvs: str
+    context: Optional[dict[str, Any]] = None
+    step_results: dict[str, dict[str, Any]] = Field(
+        ...,
+        description="Map of step name → serialized StepResult (as returned by step endpoints).",
+    )
+    options: Optional[PipelineOptions] = None
+
+
+class FullRunRequest(BaseModel):
+    """Run the full assessment in one request (same as ASOAssessmentPipeline.run)."""
+
+    hgvs: str
+    steps_to_run: Optional[list[str]] = Field(
+        None,
+        description="If set, only these steps run (see /health for valid names).",
+    )
+    options: Optional[PipelineOptions] = None
+
+
+def _pipeline_from_options(opts: Optional[PipelineOptions]) -> ASOAssessmentPipeline:
+    o = opts or PipelineOptions()
+    return ASOAssessmentPipeline(
+        model_name=o.model_name,
+        llm_only=o.llm_only,
+        use_web_search=o.use_web_search,
+        verbose=o.verbose,
     )
 
-    if stream:
-        # Stream newline-delimited JSON updates per iteration to the client
-        async def event_stream():
-            async for update in tool_llm.run_stream(
-                messages=[
-                    {"role": "user", "content": system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                max_tool_calls=MAX_TOOL_CALLS,
-                max_tokens=MAX_TOKENS,
-                stop_sequences=["</call_tool>", "</solution>"],
-                verbose=True,
-            ):
-                yield json.dumps(update) + "\n"
 
-        return StreamingResponse(event_stream(), media_type="application/x-ndjson")
+def assessment_context_from_dict(
+    data: Optional[dict[str, Any]], hgvs_fallback: str
+) -> AssessmentContext:
+    if not data:
+        return AssessmentContext(hgvs_input=hgvs_fallback)
+    d = dict(data)
+    d.setdefault("hgvs_input", hgvs_fallback)
+    if d.get("inheritance_pattern") is not None and isinstance(
+        d["inheritance_pattern"], str
+    ):
+        d["inheritance_pattern"] = InheritancePattern(d["inheritance_pattern"])
+    if d.get("pathomechanism") is not None and isinstance(d["pathomechanism"], str):
+        d["pathomechanism"] = Pathomechanism(d["pathomechanism"])
+    valid = {f.name for f in fields(AssessmentContext)}
+    kwargs = {k: v for k, v in d.items() if k in valid}
+    return AssessmentContext(**kwargs)
 
-    return await tool_llm.run(
-        messages=[
-            {"role": "user", "content": system_prompt},
-            {"role": "user", "content": prompt}
-        ],
-        max_tool_calls=MAX_TOOL_CALLS,
-        max_tokens=MAX_TOKENS,
-        stop_sequences=["</call_tool>", "</solution>"],
-        verbose=True,
+
+def assessment_context_to_dict(ctx: AssessmentContext) -> dict[str, Any]:
+    raw = asdict(ctx)
+    if raw.get("inheritance_pattern") is not None and hasattr(
+        raw["inheritance_pattern"], "value"
+    ):
+        raw["inheritance_pattern"] = raw["inheritance_pattern"].value
+    if raw.get("pathomechanism") is not None and hasattr(
+        raw["pathomechanism"], "value"
+    ):
+        raw["pathomechanism"] = raw["pathomechanism"].value
+    return raw
+
+
+def step_result_to_dict(sr: StepResult) -> dict[str, Any]:
+    d = asdict(sr)
+    d["classification"] = sr.classification.value
+    return d
+
+
+def step_result_from_dict(data: dict[str, Any]) -> StepResult:
+    return StepResult(
+        step_name=data["step_name"],
+        classification=EligibilityClassification(data["classification"]),
+        summary=data.get("summary", ""),
+        reasoning=data.get("reasoning", ""),
+        data_used=data.get("data_used") or {},
+        metadata=data.get("metadata") or {},
+        error=data.get("error"),
+        token_usage=data.get("token_usage") or {},
     )
+
+
+def serialize_report(report: ASOAssessmentReport) -> dict[str, Any]:
+    out = report.to_dict()
+    if report.context is not None:
+        out["context"] = assessment_context_to_dict(report.context)
+    return out
+
+
+def _run_single_step(step_name: str, body: StepRequest) -> dict[str, Any]:
+    if step_name not in ASOAssessmentPipeline.STEP_MAP:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown step {step_name!r}. Valid: {list(PIPELINE_STEP_NAMES)}",
+        )
+    pipeline = _pipeline_from_options(body.options)
+    ctx = assessment_context_from_dict(body.context, body.hgvs)
+    result = pipeline.run_step(step_name, body.hgvs, ctx)
+    return {
+        "step": step_name,
+        "step_result": step_result_to_dict(result),
+        "context": assessment_context_to_dict(ctx),
+    }
+
+
+@app.post("/assessment/run")
+async def assessment_full_run(body: FullRunRequest) -> dict[str, Any]:
+    """Run the full pipeline (or a subset via steps_to_run)."""
+    pipeline = _pipeline_from_options(body.options)
+    report = pipeline.run(body.hgvs, steps_to_run=body.steps_to_run)
+    return jsonable_encoder(serialize_report(report))
+
+
+@app.post("/assessment/steps/routing")
+async def assessment_routing(body: RoutingRequest) -> dict[str, Any]:
+    """Step 4: which sections (exon skipping / knockdown / WT upregulation) apply."""
+    pipeline = _pipeline_from_options(body.options)
+    ctx = assessment_context_from_dict(body.context, body.hgvs)
+    sections = pipeline._route_to_sections(ctx)
+    explanation = pipeline._explain_routing(ctx)
+    return {
+        "sections": sections,
+        "explanation": explanation,
+        "context": assessment_context_to_dict(ctx),
+    }
+
+
+@app.post("/assessment/steps/final_report")
+async def assessment_final_report(body: FinalReportRequest) -> dict[str, Any]:
+    """Final synthesis step: requires hgvs, context, and all step_results gathered so far."""
+    pipeline = _pipeline_from_options(body.options)
+    ctx = assessment_context_from_dict(body.context, body.hgvs)
+    try:
+        step_results = {k: step_result_from_dict(v) for k, v in body.step_results.items()}
+    except (KeyError, ValueError) as e:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid step_results payload: {e}"
+        ) from e
+    report = pipeline.make_final_report(body.hgvs, ctx, step_results)
+    return jsonable_encoder(serialize_report(report))
+
+
+# Register one POST route per named pipeline step
+for _step_name in PIPELINE_STEP_NAMES:
+
+    def _make_step_handler(sn: str):
+        async def _handler(body: StepRequest) -> dict[str, Any]:
+            return jsonable_encoder(_run_single_step(sn, body))
+
+        _handler.__name__ = f"step_{sn}"
+        return _handler
+
+    app.post(
+        f"/assessment/steps/{_step_name}",
+        name=f"assessment_step_{_step_name}",
+        tags=["pipeline-steps"],
+    )(_make_step_handler(_step_name))
+
 
 @app.get("/health")
-async def health_check():
-    """Health check endpoint."""
+async def health_check() -> dict[str, Any]:
+    step_paths = [f"/assessment/steps/{name}" for name in PIPELINE_STEP_NAMES]
     return {
         "status": "ok",
-        "endpoints": ["/chat"],
+        "endpoints": {
+            "full_run": "/assessment/run",
+            "routing": "/assessment/steps/routing",
+            "final_report": "/assessment/steps/final_report",
+            "steps": step_paths,
+        },
+        "pipeline_step_names": list(PIPELINE_STEP_NAMES),
     }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
-    # import asyncio
-    # variant = Variant(
-    #     transcript="NM_000350.3",
-    #     coding_change="c.2626C>T",
-    #     gene="ABCA4",
-    # )
-    # request = WorkflowRequest(
-    #     step="exon_skipping::functional_domains",
-    #     variant=variant,
-    # )
-    # response = asyncio.run(run_workflow(request))
-    # with open("dumps/tool_llm_sample.json", "w") as f:
-    #     json.dump(response, f, indent=2)
