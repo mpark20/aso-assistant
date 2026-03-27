@@ -408,8 +408,8 @@ def search_ncbi(
 
         # Format results
         formatted_results = []
-        raw_results = results.get("result", {})
-        for uid in raw_results.get("uids", []):
+        raw_results = (results or {}).get("result", {}) or {}
+        for uid in (raw_results.get("uids") or []):
             res = raw_results.get(uid, {})
             if database == "clinvar":
                 res = clinvar_formatter(res)
@@ -568,8 +568,9 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
         raise ValueError(f"Unexpected Mutalyzer error: {exc}") from exc
 
     location = "exonic"
-    if data.get("errors") or data.get("custom", {}).get("errors"):
-        errors = data.get("errors") if "errors" in data else data.get("custom", {}).get("errors")
+    errors = data.get("errors") if "errors" in data else (data.get("custom") or {}).get("errors")
+    if errors:
+        errors = errors if isinstance(errors, list) else []
         if len(errors) > 0 and any([e.get("code") == "EINTRONIC" for e in errors]):
             location = "intronic"
             data = data["custom"]
@@ -587,7 +588,8 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
         or data.get("corrected_description")
     )
     if not normalized:
-        errors = data.get("errors") if "errors" in data else data.get("custom", {}).get("errors")
+        errors = data.get("errors") if "errors" in data else (data.get("custom") or {}).get("errors")
+        errors = errors or []
         err_str = "\n".join([json.dumps(e) for e in errors])
         return MutalyzerResult(
             normalized=None,
@@ -603,9 +605,9 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
     # get extra metadata
     variants = []
     if "normalized_model" in data:
-        variants = data.get("normalized_model", {}).get("variants", [])
+        variants = (data.get("normalized_model") or {}).get("variants", []) or []
     else:
-        variants = data.get("input_model", {}).get("variants", [])
+        variants = (data.get("input_model") or {}).get("variants", []) or []
     
     loc_info = variants[0].get("location", {}) if len(variants) else None
     exon_num = None
@@ -617,11 +619,12 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
         inserted = variants[0].get("inserted", [{}])[0].get("sequence")
 
         # distance upstream/downstream of nearest coding base (None if exonic)
-        offset = loc_info.get("offset", {}).get("value")
+        offset = (loc_info.get("offset") or {}).get("value")
 
         # special case for coding exons: exon positions may be provided
-        coding_pos = loc_info.get("position") if loc_info["type"] == "point" else loc_info.get("start", {}).get("position")
-        exon_info = data.get("selector_short", {}).get("exon")
+        start_info = loc_info.get("start") or {}
+        coding_pos = loc_info.get("position") if loc_info.get("type") == "point" else start_info.get("position")
+        exon_info = (data.get("selector_short") or {}).get("exon")
         exon_list = exon_info.get("c") if exon_info else None
         parsed_exon_list = []
         if exon_list and coding_pos:
@@ -640,8 +643,8 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
                 except ValueError:
                     break
     
-    equivalent_descriptions = data.get("equivalent_descriptions", [])
-    protein_desc = data.get("protein", {}).get("description")
+    equivalent_descriptions = data.get("equivalent_descriptions") or []
+    protein_desc = (data.get("protein") or {}).get("description")
     if protein_desc:
         equivalent_descriptions.append(protein_desc)
 
@@ -780,17 +783,18 @@ def browse_uniprot(uniprot_id: str = None) -> BrowseUniProtResult:
     result = browse_response["result"]
     protein_length, source_db = None, None
     parsed_results = []
-    for feature in result["results"]:
+    for feature in (result.get("results") or []):
         # get parent metadata if not already set
-        parent_protein = feature.get("proteins", [{}])[0]
+        proteins = feature.get("proteins") or [{}]
+        parent_protein = proteins[0] if proteins else {}
         if not protein_length:
             protein_length = parent_protein.get("length")
             source_db = parent_protein.get("source_database")
         
         # parse overlapping fragments
         fragments = []
-        for entry in parent_protein.get("entry_protein_locations", []):
-            fragments.extend(entry.get("fragments", []))
+        for entry in (parent_protein.get("entry_protein_locations") or []):
+            fragments.extend(entry.get("fragments") or [])
         
         if not "metadata" in feature:
             continue
@@ -803,7 +807,8 @@ def browse_uniprot(uniprot_id: str = None) -> BrowseUniProtResult:
             overlapping_regions=fragments,
         ))
         if not protein_length:
-            protein_length = feature.get("proteins", [{}])[0].get("protein_length")
+            proteins = feature.get("proteins") or [{}]
+            protein_length = (proteins[0] if proteins else {}).get("protein_length")
         if not source_db:
             source_db = feature.get("metadata", {}).get("source_database")
     
@@ -838,9 +843,12 @@ def browse_interpro(interpro_id: str) -> InterProFeature:
     
     # print(json.dumps(browse_response, indent=1))
     
-    result = browse_response["result"]
-    metadata = result["metadata"]
-    description = "\n".join([d["text"] for d in metadata["description"]])
+    result = browse_response.get("result")
+    if not result:
+        return browse_response
+    metadata = result.get("metadata") or {}
+    description_parts = metadata.get("description") or []
+    description = "\n".join([d.get("text", "") for d in description_parts if isinstance(d, dict)])
 
     citations = []
     if metadata.get("literature") and isinstance(metadata["literature"], dict):
@@ -1051,7 +1059,7 @@ class GnomadResult(TypedDict):
     hgvs: str
     hgvsc: str
     consequence: str
-    pos: int
+    pos: Optional[int]
     exome: dict[str, float]
     error: Optional[str]
 
@@ -1111,15 +1119,25 @@ def search_gnomad(gene_symbol: str, hgvsc: str = None) -> list[GnomadResult] | G
     if not result.get("success") or not "result" in result:
         return result
     result = result["result"]
+    gene_data = (result.get("data") or {}).get("gene")
+    if not gene_data:
+        return GnomadResult(
+            transcript_id="",
+            hgvs=hgvsc or "",
+            hgvsc=hgvsc or "",
+            consequence="",
+            exome={},
+            error="No gene data returned from gnomAD.",
+        )
 
     var_filter = None
     if hgvsc is not None:
         var_filter = hgvsc.split(":")[-1]
     
-    variants = result["data"]["gene"]["variants"]
+    variants = gene_data.get("variants") or []
     ret_variants = []
     for entry in variants:
-        if var_filter is None or entry["hgvsc"] == var_filter:
+        if var_filter is None or entry.get("hgvsc") == var_filter:
             ret_variants.append(GnomadResult(**entry))
     
     if var_filter is not None:

@@ -27,11 +27,17 @@ def fetch_clinical_context(hgvs: str) -> ClinicalContext:
     # normalize variant name using Mutalyzer
     # TODO: add some central caching mechanism for normalization, as it'll be used frequently
     mutalyzer_result = search_mutalyzer(hgvs)
-    norm_hgvs = mutalyzer_result["normalized"]
-    gene_id = mutalyzer_result["gene_id"]
+    norm_hgvs = mutalyzer_result.get("normalized")
+    gene_id = mutalyzer_result.get("gene_id")
 
     # fetch clinical context from ClinVar
-    refseq, coding_change = norm_hgvs.split(":")
+    if not norm_hgvs or ":" not in norm_hgvs:
+        return ClinicalContext(
+            mutalyzer=mutalyzer_result,
+            clinvar={"error": "Could not normalize variant"},
+            clingen=ClinGenDosageKBResult(gene_symbol=gene_id or "", message="Could not normalize variant"),
+        )
+    refseq, coding_change = norm_hgvs.split(":", 1)
     refseq_id = refseq.split(".")[0]
     ncbi_result = search_ncbi(database="clinvar", search_term=f"{refseq_id} AND {coding_change}[VARNAME] AND {gene_id}[GENE]")
     if not "results" in ncbi_result or len(ncbi_result["results"]) == 0:
@@ -42,17 +48,19 @@ def fetch_clinical_context(hgvs: str) -> ClinicalContext:
     clinvar_result = ncbi_result["results"][0]
 
     # get curated PubMed citations from ClinVar RCV comments
-    rcv_id_list = clinvar_result.get("supporting_submissions", {}).get("rcv", [])
+    supporting_submissions = clinvar_result.get("supporting_submissions") or {}
+    rcv_id_list = supporting_submissions.get("rcv", []) if isinstance(supporting_submissions, dict) else []
+    rcv_id_list = rcv_id_list or []
     rcv_results = []
     for rcv_id in rcv_id_list:
         rcv_records = fetch_clinvar_rcv(rcv_id, add_citations=True)
-        rcv_records = [{"rcv": rcv_id, **r} for r in rcv_records if r["classification"]["comment"] is not None]
+        rcv_records = [{"rcv": rcv_id, **r} for r in (rcv_records or []) if r.get("classification") and r["classification"].get("comment") is not None]
         if len(rcv_records):
             rcv_results.extend(rcv_records)
-    clinvar_result["supporting_submissions"]["comments"] = rcv_results
-    
-    clinvar_result["supporting_submissions"].pop("rcv")
-    clinvar_result["supporting_submissions"].pop("scv")
+    if isinstance(clinvar_result.get("supporting_submissions"), dict):
+        clinvar_result["supporting_submissions"]["comments"] = rcv_results
+        clinvar_result["supporting_submissions"].pop("rcv", None)
+        clinvar_result["supporting_submissions"].pop("scv", None)
 
     # get dosage sensitivity evidence from ClinGen. MUST run `download_data.py` to download resource
     clingen_data = search_clingen_dosage_kb(gene_id)
@@ -88,8 +96,12 @@ def fetch_protein_context(hgvs: str) -> ProteinContext:
         return None
     
     cds_start, cds_end = result["cds"]
-    exon_index = result["nearest_exon"]
-    exon_cdna_range = result["exon_positions"][exon_index - 1]
+    exon_index = result.get("nearest_exon")
+    exon_positions = result.get("exon_positions")
+    if exon_index is None or not exon_positions or exon_index < 1 or exon_index > len(exon_positions):
+        print(f"No valid exon position found for {hgvs}.")
+        return None
+    exon_cdna_range = exon_positions[exon_index - 1]
     gene_id = result["gene_id"]
     hgvs = result["normalized"]
 
@@ -102,6 +114,9 @@ def fetch_protein_context(hgvs: str) -> ProteinContext:
     try:
         refseq_id = hgvs.split(':')[0].split('.')[0]
         result = search_uniprot(refseq_id, gene_name=gene_id)
+        if not result or not isinstance(result, list):
+            print(f"Error fetching UniProt for {hgvs}: no results found")
+            return None
         uniprot_id = result[0]["uniprot_id"]
     except Exception as e:
         print(f"Error fetching gene id for {hgvs}: {e}")
@@ -109,8 +124,11 @@ def fetch_protein_context(hgvs: str) -> ProteinContext:
 
     # fetch InterPro features overlapping the protein entry
     uniprot_info = browse_uniprot(uniprot_id)
+    if not uniprot_info or "protein_length" not in uniprot_info:
+        print(f"Error fetching UniProt browse for {hgvs}: invalid response")
+        return None
     protein_length = uniprot_info["protein_length"]
-    interpro_hits = uniprot_info["results"]
+    interpro_hits = uniprot_info.get("results") or []
 
     # filter to entries overlapping the specific exon
     exon_aa_range[0] = exon_aa_range[0] or 1
@@ -185,7 +203,8 @@ def fetch_transcript_context(hgvs: str) -> TranscriptContext:
     if curr_exon_idx is None:
         print(f"Variant {hgvs} is intronic. Using the nearest exon instead.")
         mutalyzer_result = search_mutalyzer(hgvs, return_exons=True)
-        curr_exon_idx = mutalyzer_result["nearest_exon"] - 1  # convert to 0-indexed for consistency in calculations
+        nearest_exon = mutalyzer_result.get("nearest_exon")
+        curr_exon_idx = (nearest_exon - 1) if nearest_exon is not None else 0
         message = f"Variant {hgvs} is intronic. Using the nearest exon instead."
 
     flanking_exons = []
@@ -212,8 +231,11 @@ def fetch_transcript_context(hgvs: str) -> TranscriptContext:
 # TODO: deprecate. unnecessary since we can just use the pubmed tool directly
 def fetch_pubmed_context(clinvar_result: ClinVarResult, abstracts_only: bool = False) -> List[PubMedPaper]:
     pubmed_ids = []
-    for entry in clinvar_result["supporting_submissions"].get("comments", []):
-        for citation in entry.get("classification", {}).get("citations", []):
+    supporting_submissions = clinvar_result.get("supporting_submissions") or {}
+    comments = supporting_submissions.get("comments", []) if isinstance(supporting_submissions, dict) else []
+    for entry in comments:
+        classification = entry.get("classification") or {}
+        for citation in (classification.get("citations") or []):
             if citation.get("source") and citation["source"] == "PubMed":
                 pubmed_ids.append(citation["id"])
     if not pubmed_ids:
@@ -252,18 +274,20 @@ def _filter_ipr_domains(
         dict containing the amino acid range and overlapping InterPro domains
     """
     domains = []
-    for entry in interpro_results:
-        if entry["type"] != "domain":
+    for entry in interpro_results or []:
+        if entry.get("type") != "domain":
             continue
         # get metadata
-        name = entry["name"]
-        ipr_id = entry["interpro_id"]
-        go_terms = entry.get("go_terms", [])
+        name = entry.get("name")
+        ipr_id = entry.get("interpro_id")
+        go_terms = entry.get("go_terms") or []
         if isinstance(go_terms, list):
-            go_terms = [gt["name"] for gt in go_terms]
+            go_terms = [gt["name"] for gt in go_terms if isinstance(gt, dict) and gt.get("name")]
         # find overlap
-        for value in entry["overlapping_regions"]:
-            start, end = value["start"], value['end']
+        for value in (entry.get("overlapping_regions") or []):
+            if not isinstance(value, dict) or "start" not in value or "end" not in value:
+                continue
+            start, end = value["start"], value["end"]
             if (start <= aa_range[0] <= end) or (start <= aa_range[1] <= end):
                 result = {"name": name, "interpro_id": ipr_id, "go_terms": go_terms}
                 if add_details:
