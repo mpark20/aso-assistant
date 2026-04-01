@@ -138,7 +138,7 @@ Determine whether the variant causes:
   - DN is by definition dominant; distinguishing GoF vs DN may be difficult
   - For ASO purposes, GoF and DN approaches are mostly the same
 - **complex**: Mixed GoF and LoF effects
-- **unknown**: Pathomechanism is not clear given the current evidence
+- **unknown**: Pathomechanism cannot be determined given the current information
 
 ### Additional considerations for pathomechanism inference (when no functional data available):
 1. In recessive diseases that have only been associated with LoF variants, a newly reported pathogenic missense variant are likely to be LoF.

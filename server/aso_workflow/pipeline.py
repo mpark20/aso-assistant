@@ -313,9 +313,11 @@ your JSON assessment.
 
         classification = EligibilityClassification(result.get("classification", "unable_to_assess"))
 
-        context.hgvs_normalized = result.get("hgvs_normalized") or hgvs
-        context.gene_id = result.get("gene_id")
-        context.refseq_id = result.get("refseq_id")
+        context.hgvs_normalized = norm_hgvs
+        context.gene_id = mutalyzer_data.get("gene_id")
+        context.intronic_or_exonic = "intronic" if mutalyzer_data.get("intronic") else "exonic"
+        context.refseq_id = mutalyzer_data.get("refseq_id")
+
         context.variant_valid = result.get("variant_valid", False)
         context.is_cnv_gain = result.get("is_cnv_gain", False)
         context.is_cnv_loss = result.get("is_cnv_loss", False)
@@ -452,16 +454,22 @@ CLINVAR DATA:
 
         context.raw_cache["aso_check_pubmed"] = raw_data
         try:
-            context.existing_aso_found = result.get("aso_evidence_found", False)
-            context.existing_aso_type = result.get("approach_used", "unknown")
-            context.existing_aso_success = result.get("aso_success", False)
-            is_sufficient = result.get("evidence_classification", "needs_further_evaluation") == "sufficient_functional_evidence"
-            context.existing_aso_sufficient = is_sufficient
+            # record type of aso studied
+            existing_aso_found = result.get("aso_evidence_found", False)
+            context.existing_aso_type = result.get("approach_used", "unknown") if existing_aso_found else "not_applicable"
+            
+            # record experimental success
+            context.existing_aso_success = (
+                existing_aso_found and
+                result.get("aso_success", False)
+            )
+            context.existing_aso_sufficient = (
+                context.existing_aso_success and 
+                result.get("evidence_classification", "") == "sufficient_functional_evidence"
+            )
         except Exception:
-            context.existing_aso_found = False
-            context.existing_aso_type = "unknown"
-            context.existing_aso_success = False
-            context.existing_aso_sufficient = False
+            # do not infer metadata if system failed to fetch information
+            context.existing_aso_type = "not_applicable"
 
         return StepResult(
             step_name="aso_check",
@@ -473,7 +481,8 @@ CLINVAR DATA:
                 "evidence_snippets": result.get("evidence_snippets", []),
                 "aso_specificity": result.get("aso_specificity", "unknown"),
                 "approach_used": result.get("approach_used", "unknown"),
-                "aso_success": result.get("aso_success", False),
+                "aso_success": context.existing_aso_success,
+                "aso_sufficient": context.existing_aso_sufficient,
                 "evidence_classification": result.get("evidence_classification", "unknown"),
                 "warnings": result.get("warnings", []),
                 "_tool_call_log": result.get("_tool_call_log", []),
@@ -844,7 +853,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
                 "canonical_splicing_destroyed": result.get("canonical_splicing_destroyed"),
                 "wildtype_transcript_detectable": result.get("wildtype_transcript_detectable"),
                 "variant_distance_from_splice_site_bp": result.get("variant_distance_from_splice_site_bp"),
-                "intronic_or_exonic": result.get("intronic_or_exonic"),
+                "intronic_or_exonic": "intronic" if mutalyzer_data.get("intronic") else "exonic",
                 "aso_evidence_found": result.get("aso_evidence_found", False),
                 "aso_evidence_description": result.get("aso_evidence_description", ""),
                 "warnings": result.get("warnings", []),
@@ -910,6 +919,16 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             else:
                 sections["exon_skipping"] = True
                 sections["knockdown"] = True
+        
+        # protocol describes assessing variants in exons
+        if context.intronic_or_exonic == "intronic":
+            sections["exon_skipping"] = False
+        
+        # override any info above with existing aso studies
+        if context.existing_aso_success and context.existing_aso_sufficient:
+            approach = context.existing_aso_type
+            if approach in sections:
+                sections[approach] = True
 
         return sections
 
@@ -924,6 +943,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             f"  - Pathomechanism: {context.pathomechanism.value if context.pathomechanism else 'unknown'}",
             f"  - Haploinsufficiency: {context.is_haploinsufficient}",
             f"  - CNV Gain: {context.is_cnv_gain}, CNV Loss: {context.is_cnv_loss}",
+            f"  - Type: {context.intronic_or_exonic}"
             "",
             f"Sections to evaluate: {', '.join(selected) if selected else 'none (check Step 0-2 results)'}",
         ]

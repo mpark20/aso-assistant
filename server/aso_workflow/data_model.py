@@ -68,9 +68,9 @@ class AssessmentContext:
     hgvs_normalized: Optional[str] = None
     gene_id: Optional[str] = None
     refseq_id: Optional[str] = None
+    intronic_or_exonic: Optional[str] = None    # "intronic", "exonic"
 
     # ASO check outputs
-    existing_aso_found: Optional[bool] = None
     existing_aso_type: Optional[str] = None
     existing_aso_success: Optional[bool] = None
     existing_aso_sufficient: Optional[bool] = None
@@ -89,7 +89,6 @@ class AssessmentContext:
     has_splicing_evidence: Optional[bool] = None   # True = confirmed splicing effect
     splicing_effect_type: Optional[str] = None     # "cryptic_exon", "exon_skipping", "donor_loss", "acceptor_loss", etc.
     canonical_splicing_destroyed: Optional[bool] = None
-    intronic_or_exonic: Optional[str] = None    # "intronic", "exonic"
 
     # Step 0 outputs
     variant_valid: Optional[bool] = None
