@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Variant Report Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --font-serif: Georgia, serif;
+    --border-radius-md: 8px;
+    --border-radius-lg: 12px;
+    --border-radius-xl: 16px;
+    --color-background-primary: #ffffff;
+    --color-background-secondary: #f5f5f3;
+    --color-background-tertiary: #eeede8;
+    --color-text-primary: #1a1a18;
+    --color-text-secondary: #5a5a57;
+    --color-text-tertiary: #9a9a96;
+    --color-border-tertiary: rgba(0,0,0,0.12);
+    --color-border-secondary: rgba(0,0,0,0.22);
+    --color-border-primary: rgba(0,0,0,0.32);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-background-primary: #1e1e1c;
+      --color-background-secondary: #2a2a28;
+      --color-background-tertiary: #141412;
+      --color-text-primary: #f0f0ec;
+      --color-text-secondary: #a8a8a4;
+      --color-text-tertiary: #686864;
+      --color-border-tertiary: rgba(255,255,255,0.1);
+      --color-border-secondary: rgba(255,255,255,0.18);
+      --color-border-primary: rgba(255,255,255,0.28);
+    }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--color-background-tertiary);
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+  }
+
+  .page-wrap {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .container { padding: 0; }
+
+  .header { margin-bottom: 1.5rem; }
+  .gene-tag {
+    display: inline-block;
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    margin-bottom: 8px;
+    font-family: var(--font-mono);
+  }
+  h1 { font-size: 22px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px; }
+  .subtitle { font-size: 14px; color: var(--color-text-secondary); }
+
+  .section { margin-bottom: 1.25rem; }
+  .section-title { font-size: 15px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 10px; }
+
+  .card {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-lg);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 16px 12px;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .card-title { font-size: 14px; font-weight: 500; color: var(--color-text-primary); }
+  .card-body { padding: 14px 16px; }
+
+  .badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 9px;
+    border-radius: 20px;
+  }
+  .badge-likely  { background: #EAF3DE; color: #3B6D11; }
+  .badge-not     { background: #FCEBEB; color: #A32D2D; }
+  .badge-unable  { background: #FAEEDA; color: #854F0B; }
+  .badge-na      { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+  .badge-eligible{ background: #E1F5EE; color: #0F6E56; }
+
+  .strategies-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap: 10px;
+  }
+  .strategy-card {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    padding: 14px;
+  }
+  .strategy-label  { font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px; }
+  .strategy-evidence { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; margin-bottom: 8px; margin-top: 8px; }
+  .strategy-caveat {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    line-height: 1.5;
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding-top: 8px;
+    margin-top: 4px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: 10px;
+  }
+  .meta-item {
+    background: var(--color-background-primary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    padding: 12px 14px;
+  }
+  .meta-label { font-size: 11px; color: var(--color-text-tertiary); margin-bottom: 4px; }
+  .meta-value { font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+
+  .step-card {
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .step-header {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    user-select: none;
+    background: var(--color-background-primary);
+  }
+  .step-header:hover { background: var(--color-background-secondary); }
+  .step-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); flex: 1; }
+  .step-summary { font-size: 13px; color: var(--color-text-secondary); }
+  .step-body {
+    border-top: 0.5px solid var(--color-border-tertiary);
+    padding: 14px;
+    background: var(--color-background-primary);
+  }
+  .step-reasoning { font-size: 13px; color: var(--color-text-secondary); line-height: 1.6; margin-bottom: 12px; }
+
+  .toggle-btn {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    background: var(--color-background-secondary);
+    border: 0.5px solid var(--color-border-tertiary);
+    border-radius: var(--border-radius-md);
+    padding: 3px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .toggle-btn:hover { color: var(--color-text-secondary); }
+
+  .data-used { margin-top: 10px; }
+  .data-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .data-label { font-size: 12px; color: var(--color-text-tertiary); }
+  .data-payload {
+    background: var(--color-background-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    overflow: auto;
+    max-height: 280px;
+    line-height: 1.5;
+    white-space: pre;
+  }
+
+  .paper-list { display: flex; flex-direction: column; gap: 6px; }
+  .paper-item {
+    background: var(--color-background-secondary);
+    border-radius: var(--border-radius-md);
+    padding: 8px 12px;
+  }
+  .paper-title { font-size: 12px; color: var(--color-text-primary); line-height: 1.4; margin-bottom: 3px; }
+  .paper-meta  { font-size: 11px; color: var(--color-text-tertiary); }
+
+  .chevron { font-size: 12px; color: var(--color-text-tertiary); transition: transform 0.15s; display: inline-block; }
+  .chevron.open { transform: rotate(180deg); }
+
+  .divider { height: 0.5px; background: var(--color-border-tertiary); margin: 12px 0; }
+
+  .warning-item {
+    font-size: 12px;
+    color: #854F0B;
+    background: #FAEEDA;
+    border-radius: var(--border-radius-md);
+    padding: 6px 10px;
+    margin-bottom: 4px;
+    line-height: 1.4;
+  }
+
+  .next-step-item {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    padding: 6px 0;
+    border-bottom: 0.5px solid var(--color-border-tertiary);
+    line-height: 1.5;
+    display: flex;
+    gap: 8px;
+  }
+  .next-step-item:last-child { border-bottom: none; }
+  .step-num { font-size: 11px; font-weight: 500; color: var(--color-text-tertiary); min-width: 18px; padding-top: 2px; }
+
+  .summary-text { font-size: 14px; color: var(--color-text-secondary); line-height: 1.7; }
+
+  .input-row { display: flex; gap: 8px; margin-bottom: 1rem; }
+  .input-row input {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 13px;
+    border: 0.5px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    outline: none;
+  }
+  .input-row input:focus { border-color: var(--color-border-primary); }
+  .input-row button {
+    padding: 8px 16px;
+    font-size: 13px;
+    border: 0.5px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: var(--font-sans);
+  }
+  .input-row button:hover { background: var(--color-background-secondary); }
+
+  .note {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    margin-bottom: 1.5rem;
+    padding: 8px 12px;
+    background: var(--color-background-secondary);
+    border-left: 2px solid var(--color-border-secondary);
+    border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
+  }
+
+  @media (max-width: 540px) {
+    .strategies-grid { grid-template-columns: 1fr; }
+    .meta-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrap">
+<div class="container" id="app">
+  <div id="report"></div>
+</div>
+</div>
+
+<script>
+
+const REPORT = {}
+
+function classificationBadge(cls) {
+  const map = {
+    likely_eligible: ['likely eligible', 'badge-likely'],
+    not_eligible: ['not eligible', 'badge-not'],
+    unable_to_assess: ['unable to assess', 'badge-unable'],
+    not_applicable: ['not applicable', 'badge-na'],
+    eligible: ['eligible', 'badge-eligible'],
+  };
+  const [label, css] = map[cls] || [cls, 'badge-na'];
+  return `<span class="badge ${css}">${label}</span>`;
+}
+
+function stepNameLabel(key) {
+  const m = {
+    variant_check: 'Variant check',
+    aso_check: 'ASO / existing therapy check',
+    inheritance_pattern: 'Inheritance pattern',
+    pathomechanism: 'Pathomechanism',
+    splicing_effects: 'Splicing effects',
+    exon_skipping: 'Exon skipping',
+    knockdown: 'Transcript knockdown'
+  };
+  return m[key] || key;
+}
+
+function strategyLabel(key) {
+  const m = {
+    splice_correction: 'Splice correction',
+    exon_skipping: 'Exon skipping',
+    transcript_knockdown: 'Transcript knockdown',
+    wt_upregulation: 'WT upregulation'
+  };
+  return m[key] || key;
+}
+
+let openSteps = {};
+let openData = {};
+
+function toggleStep(id) { openSteps[id] = !openSteps[id]; render(); }
+function toggleData(id) { openData[id] = !openData[id]; render(); }
+
+function renderPapers(papers) {
+  if (!papers || papers.length === 0) return '<span style="font-size:12px;color:var(--color-text-tertiary)">No papers found.</span>';
+  return `<div class="paper-list">${papers.map(p => `
+    <div class="paper-item">
+      <div class="paper-title">${p.title}</div>
+      <div class="paper-meta">${p.journal || ''} · ${p.pubdate || ''}${p.pmid ? ` · PMID: ${p.pmid}` : ''}</div>
+    </div>`).join('')}</div>`;
+}
+
+function renderDataUsed(data, stepKey) {
+  if (!data) return '';
+  const id = 'data_' + stepKey;
+  const isOpen = openData[id];
+  const items = [];
+  if (data.mutalyzer) items.push({key: 'Mutalyzer normalization', val: JSON.stringify(data.mutalyzer, null, 2), type: 'json'});
+  if (data.clinvar) items.push({key: 'ClinVar entry', val: JSON.stringify(data.clinvar, null, 2), type: 'json'});
+  if (data.vep) items.push({key: 'VEP annotation', val: JSON.stringify(data.vep, null, 2), type: 'json'});
+  if (data.clingen) items.push({key: 'ClinGen', val: JSON.stringify(data.clingen, null, 2), type: 'json'});
+  if (data.transcript_context) items.push({key: 'Transcript context', val: JSON.stringify(data.transcript_context, null, 2), type: 'json'});
+  if (data.protein_context) items.push({key: 'Protein / domain context', val: JSON.stringify(data.protein_context, null, 2), type: 'json'});
+  if (data.variant_level_papers !== undefined) items.push({key: `Variant-level literature (${data.variant_level_papers.length})`, val: renderPapers(data.variant_level_papers), type: 'html'});
+  if (data.gene_level_papers !== undefined) items.push({key: `Gene-level literature (${data.gene_level_papers.length})`, val: renderPapers(data.gene_level_papers), type: 'html'});
+  if (data.pubmed) items.push({key: `PubMed results (${data.pubmed.length})`, val: renderPapers(data.pubmed), type: 'html'});
+  if (items.length === 0) return '';
+  return `<div class="data-used">
+    <div class="data-header">
+      <span class="data-label">Data used</span>
+      <button class="toggle-btn" onclick="toggleData('${id}')">${isOpen ? 'Hide' : 'Show'} sources</button>
+    </div>
+    ${isOpen ? items.map((item, i) => {
+      const itemId = id + '_' + i;
+      const isItemOpen = openData[itemId];
+      return `<div style="margin-bottom:8px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+          <span style="font-size:12px;font-weight:500;color:var(--color-text-secondary);">${item.key}</span>
+          <button class="toggle-btn" onclick="toggleData('${itemId}')">${isItemOpen ? 'Hide' : 'Expand'}</button>
+        </div>
+        ${isItemOpen ? (item.type === 'html' ? item.val : `<div class="data-payload">${item.val}</div>`) : ''}
+      </div>`;
+    }).join('') : ''}
+  </div>`;
+}
+
+function renderSteps(steps) {
+  return Object.entries(steps).map(([key, step]) => {
+    const id = 'step_' + key;
+    const isOpen = openSteps[id];
+    return `<div class="step-card">
+      <div class="step-header" onclick="toggleStep('${id}')">
+        <div style="flex:1;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+            <span class="step-title">${stepNameLabel(key)}</span>
+            ${classificationBadge(step.classification)}
+          </div>
+          <div class="step-summary">${step.summary}</div>
+        </div>
+        <span class="chevron ${isOpen ? 'open' : ''}">▾</span>
+      </div>
+      ${isOpen ? `<div class="step-body">
+        <p style="font-size:12px;font-weight:500;color:var(--color-text-tertiary);margin-bottom:6px;">Reasoning</p>
+        <p class="step-reasoning">${step.reasoning}</p>
+        ${renderDataUsed(step.data_used, key)}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function render() {
+  const r = REPORT.pipeline_report;
+  const s = r.summary;
+  const steps = r.step_results;
+  const strategies = s.strategy_assessments;
+
+  document.getElementById('report').innerHTML = `
+    <div class="header">
+      <span class="gene-tag">${r.gene_id}</span>
+      <h1>${r.hgvs}</h1>
+      <div class="subtitle">${s.variant_description}</div>
+    </div>
+
+    <div class="section">
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-label">Inheritance</div>
+          <div style="margin-top:4px;"><span class="badge" style="background:#FBEAF0;color:#993556;">${steps.inheritance_pattern.metadata.inheritance_pattern}</span></div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Pathomechanism</div>
+          <div style="margin-top:4px;"><span class="badge" style="background:#FBEAF0;color:#993556;">${steps.pathomechanism.metadata.pathomechanism}</span></div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Haploinsufficiency</div>
+          <div style="margin-top:4px;"><span class="badge badge-na">not haploinsufficient</span><div style="font-size:11px;color:var(--color-text-tertiary);margin-top:4px;">pLI 0.0 · LOEUF 0.81</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Overview</span></div>
+        <div class="card-body">
+          <p class="summary-text">${s.overall_summary.slice(0, 490)}...</p>
+          <div class="divider"></div>
+          <p style="font-size:12px;font-weight:500;color:var(--color-text-tertiary);margin-bottom:6px;">Splicing note</p>
+          <p style="font-size:13px;color:var(--color-text-secondary);">${s.splicing_summary}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Therapy strategy assessment</div>
+      <div class="strategies-grid">
+        ${Object.entries(strategies).map(([key, strat]) => `
+          <div class="strategy-card">
+            <div class="strategy-label">${strategyLabel(key)}</div>
+            <div>${classificationBadge(strat.classification)}</div>
+            <div class="strategy-evidence">${strat.key_evidence}</div>
+            ${strat.caveats && strat.caveats !== 'None' ? `<div class="strategy-caveat">${strat.caveats}</div>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Pipeline steps</div>
+      ${renderSteps(steps)}
+    </div>
+
+    <div class="section">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Recommended next steps</span></div>
+        <div class="card-body">
+          ${s.recommended_next_steps.map((step, i) => `
+            <div class="next-step-item">
+              <span class="step-num">${i+1}.</span>
+              <span>${step}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Important caveats</div>
+      ${s.important_caveats.map(c => `<div class="warning-item">${c}</div>`).join('')}
+    </div>
+  `;
+}
+
+function loadDemo() { render(); }
+
+render();
+</script>
+</body>
+</html>

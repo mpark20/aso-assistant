@@ -31,13 +31,14 @@ def sanitize_hgvs_for_filename(hgvs: str, max_length: int = 120) -> str:
     return safe[:max_length] if len(safe) > max_length else safe
 
 
-def load_variants(spreadsheet_path: Path) -> pd.DataFrame:
+def load_variants(spreadsheet_path: Path, split="val") -> pd.DataFrame:
     """Load variants from spreadsheet (xlsx or csv)."""
     path_str = str(spreadsheet_path)
     if path_str.endswith('.csv'):
         df = pd.read_csv(spreadsheet_path)
     else:
         df = pd.read_excel(spreadsheet_path, engine='openpyxl')
+    df.rename(columns={"normalized_hgvs": "hgvs"}, inplace=True)
 
     required = ['hgvs', 'parsed_outcome']
     missing = [c for c in required if c not in df.columns]
@@ -46,6 +47,10 @@ def load_variants(spreadsheet_path: Path) -> pd.DataFrame:
             f"Spreadsheet must have columns {required}. Missing: {missing}. "
             f"Found columns: {list(df.columns)}"
         )
+    
+    if split=="val":
+        df = df.loc[df["source"] == "n1c_test_variants"].reset_index()
+
     return df
 
 
@@ -96,20 +101,6 @@ def score_result(true_outcome: dict, pred_outcome: dict) -> dict:
         else:
             score += 0
     return score
-    
-
-
-
-
-def write_report_html(json_path: str, html_path: str) -> str:
-    """Write the report to an HTML file."""
-    with open(json_path, "r") as f:
-        report = json.load(f)
-    with open(Path(__file__).parent / "aso_workflow" / "report_template.html", "r") as f:
-        template = f.read()
-    template = template.replace("const REPORT = {}", f"const REPORT = {json.dumps(report, indent=2)}")
-    with open(html_path, "w") as f:
-        f.write(template)
 
 
 def main(
@@ -140,7 +131,7 @@ def main(
 
     df = load_variants(input_file)
     if num_examples:
-        df = df.sample(num_examples).reset_index()
+        df = df.iloc[:num_examples]
     
     pipeline = ASOAssessmentPipeline(
         model_name=model_name,
@@ -206,7 +197,7 @@ def main(
             }
             with open(out_path, 'w') as f:
                 json.dump(result, f, indent=2)
-            write_report_html(out_path, out_path.replace(".json", ".html"))
+            
             processed += 1
             if verbose:
                 print(f"  → Wrote {out_path}")
@@ -235,7 +226,7 @@ if __name__ == "__main__":
         "-d", "--data-file",
         type=Path,
         help="Path to spreadsheet (xlsx or csv) with columns 'hgvs' and 'parsed_outcome'",
-        default=Path("data/parsed_n1c_assessments.csv")
+        default=Path("data/parsed_n1c_assessments_v2.csv")
     )
     # this is for the MAIN model, the helper model is hardcoded to gemini/gemini-3.1-flash-lite-preview
     parser.add_argument(
