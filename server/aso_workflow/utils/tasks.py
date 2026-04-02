@@ -170,10 +170,16 @@ def fetch_transcript_context(hgvs: str) -> TranscriptContext:
         print(f"Error fetching exon context for {hgvs}: {ensembl_result['error']}")
         return None
     
-    chrom, start, end, strand = ensembl_result["seq_region_name"], ensembl_result["start"], ensembl_result["end"], ensembl_result["strand"]
+    chrom, start, end, strand, transcript_id = (
+        ensembl_result["seq_region_name"],
+        ensembl_result["start"],
+        ensembl_result["end"],
+        ensembl_result["strand"],
+        ensembl_result["transcript_id"]
+    )
 
     # fetch exon frames from UCSC Genome Browser (we only need the start position to fetch the overlapping transcript)
-    ucsc_result = search_gencode(chrom, start, start+1)  # UCSC excludes the end position
+    ucsc_result = search_gencode(chrom, start, start+1, ensembl_id=transcript_id)  # UCSC excludes the end position
     if not ucsc_result or "error" in ucsc_result:
         print(f"Error fetching exon context for {hgvs}: {ucsc_result['error']}")
         return None
@@ -192,7 +198,7 @@ def fetch_transcript_context(hgvs: str) -> TranscriptContext:
         exon_info.append(ExonInfo(
             number=i + 1,
             length=e - s,
-            coordinates=[s, e-1],  # convert to closed-closed intervals
+            coordinates=[s, e],  # open-closed intervals
             frame=f,
             sequence=None,
         ))

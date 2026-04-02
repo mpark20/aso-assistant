@@ -906,7 +906,7 @@ def search_ensembl_vep(hgvs: str) -> EnsemblVEPResult:
         "DosageSensitivity": 1,
         "mane": 1,
         "numbers": 1,
-        "refseq": 1,
+        # "refseq": 1,
         "canonical": 1,
         "RiboseqORFs": 1,
         "SpliceAI": 1,
@@ -938,7 +938,7 @@ def search_ensembl_vep(hgvs: str) -> EnsemblVEPResult:
 
     refseq_id = hgvs.split(":")[0]
     for tc in result.get("transcript_consequences", []):
-        if tc["transcript_id"] == refseq_id:
+        if tc.get("mane") and tc.get("mane_select", "") == refseq_id:
             #for k in ["biotype", "gene_symbol", "cds_start", "cds_end", "protein_start", "protein_end", "used_ref", "variant_allele", "amino_acids", "consequence_terms"]:
             for k in tc.keys():
                 data[k] = tc.get(k)
@@ -956,7 +956,7 @@ class GencodeResult(TypedDict):
     cds_start: int
     cds_end: int
 
-def search_gencode(chrom: str, start: int, end: int) -> GencodeResult:
+def search_gencode(chrom: str, start: int, end: int, ensembl_id: str = None) -> GencodeResult:
     """
     Search GENCODE (via UCSC Genome Browser) to get transcript exon information.
 
@@ -967,6 +967,7 @@ def search_gencode(chrom: str, start: int, end: int) -> GencodeResult:
         chrom: The chromosome name (e.g. "chr17").
         start: The start position of the genomic region (0-based).
         end: The end position of the genomic region.
+        ensembl_id: (optional) filter results to the given Ensembl transcript ID. otherwise, select the first result.
 
     Returns:
         A GencodeResult containing the transcript name, strand, exon frames,
@@ -998,7 +999,13 @@ def search_gencode(chrom: str, start: int, end: int) -> GencodeResult:
     if not "wgEncodeGencodeBasicV48" in result or not len(result["wgEncodeGencodeBasicV48"]):
         print(f"No GENCODE track found for {chrom}:{start}-{end}")
         return None
+    
     track_result = result["wgEncodeGencodeBasicV48"][0]
+    if ensembl_id:
+        for res in result["wgEncodeGencodeBasicV48"]:
+            if res["name"].split('.')[0] == ensembl_id.split('.')[0]:
+                track_result = res
+                break
 
     exon_frames = [int(i) for i in track_result["exonFrames"].split(",") if len(i)]
     exon_starts = [int(i) for i in track_result["exonStarts"].split(",") if len(i)]
