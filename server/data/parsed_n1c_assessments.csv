@@ -1,85 +1,125 @@
-hgvs,parsed_outcome,N1C VARIANT outcome,source
-NM_000329.3:c.1430A>G,splice correction:likely eligible;knockdown:likely eligible,Likely eligible for splice correction and knockdown,n1c_test_variants
-NM_000334.4:c.3891C>A,unable to assess,Unable to assess,n1c_test_variants
-NM_000070.3:c.2105C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_000170.3:c.538C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
-NM_000202.8:c.1122C>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
-NM_000303.3:c.640-15479C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
-NM_000350.3:c.769-784C>T,splice correction:eligible,Eligible for splice correction,n1c_test_variants
-NM_000391.4:c.225A>G,splice correction:not eligible,Not eligible for splice correction,n1c_test_variants
-NM_000492.4:c.2989-313A>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
-NM_000548.3:c.3598C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_000561.4:c.1509-26G>A,unable to assess,Unable to assess,n1c_test_variants
-NM_000702.4:c.2936C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_001040142.2:c.1094C>T,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001040142.2:c.2657T>C,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001040142.2:c.4780T>A,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001040142.2:c.5317G>A,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_001040142.2:c.5636T>C,knockdown:eligible,Eligible for knockdown,n1c_assessed_variants
-NM_001080517.1:c.1967T>G,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_001086521.2:c.195+271C>T,splice correction:likely eligible,Likely eligible for splice correction,n1c_test_variants
-NM_001100913.2:c.625G>A,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
-NM_001127222.2:c.4174G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,n1c_test_variants
-NM_001130987.2:c.1276+5G>A,splice correction:not eligible,Not eligible for splice correction,n1c_assessed_variants
-NM_001130987.2:c.237-159_342+1237del,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_001130987.2:c.268C>T,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_001130987.2:c.3167G>C,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_001130987.2:c.3859dup,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_assessed_variants
-NM_001130987.2:c.4873C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_assessed_variants
-NM_001130987.2:c.5815_5816del,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_001136196.1:c.466G>A,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_001160036.2:c.1448G>A,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_001165963.2:c.4547C>A,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.2:c.5602_5603insATCC,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.3:c.2593C>T,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.3:c.3724_3725dup,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.4:c.1570G>T,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.4:c.1709G>A,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.2303C>T,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.2792G>A,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.3629C>T,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.3985C>T,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001165963.4:c.4465C>A,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.4493T>C,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
-NM_001165963.4:c.4916G>C,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001165963.4:c.5542C>T,wt_upregulation:eligible,Eligible for WT upregulation,gene_steps
-NM_001167623.2:c.1216G>A,exon skipping:eligible,Eligible for exon skipping,n1c_test_variants
-NM_001194.4:c.736G>A,knockdown:likely eligible,Likely eligible for knockdown,n1c_test_variants
-NM_001242896.3:c.3919G>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_001244008.2:c.914C>T,knockdown:eligible,Eligible for knockdown,n1c_test_variants
-NM_001330260.2:c.3953A>G,unable to assess,Unable to assess,n1c_assessed_variants
-NM_001330260.2:c.5615G>A,knockdown:eligible,Eligible for knockdown,n1c_assessed_variants
-NM_001350626.1:c.1593G>A,exon skipping:likely eligible,Likely eligible for exon skipping,gene_steps
-NM_003359.3:c.193C>T,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_003494.4:c.533del,exon skipping:not eligible,Not eligible for exon skipping,n1c_assessed_variants
-NM_003650.4:c.2035-946G>A,unable to assess,Unable to assess,n1c_test_variants
-NM_003907.3:c.1156+13G>A,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
-NM_004211.5:c.296_297del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,gene_steps
-NM_004539.3:c.1600C>T,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
-NM_005027.3:c.1117G>A,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
-NM_005859.5:c.159dup,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
-NM_006922.4:c.585_586del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_assessed_variants
-NM_012250.5:c.68G>A,knockdown:likely eligible,Likely eligible for knockdown,gene_steps
-NM_014191.3:c.5615G>A,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_014191.3:c.5630A>G,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_014727.3:c.8079delC,unable to assess,Unable to assess,n1c_test_variants
-NM_015559.3:c.2609G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
-NM_018026.3:c.607C>T,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_018075.5:c.1025G>A,exon skipping:not eligible,Not eligible for exon skipping,n1c_test_variants
-NM_018075.5:c.289del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
-NM_020366.3:c.1468-128T>G,splice correction:eligible,Eligible for splice correction,n1c_test_variants
-NM_020822.2:c.1283G>A,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_020822.3:c.1283G>A,knockdown:eligible,Eligible for knockdown,gene_steps
-NM_021007.3:c.2558G>A,knockdown:eligible,Eligible for knockdown,n1c_assessed_variants
-NM_021007.3:c.4782G>T,unable to assess,Unable to assess,n1c_assessed_variants
-NM_021032.4:c.341G>A,knockdown:likely eligible,Likely Eligible for knockdown,gene_steps
-NM_024298.5:c.758_778del,unable to assess,Unable to assess,n1c_test_variants
-NM_024312.5:c.1123C>T,unable to assess,Unable to assess,n1c_test_variants
-NM_024312.5:c.3488del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
-NM_024312.5:c.3503_3504del,exon skipping:unlikely eligible,Unlikely eligible for exon skipping,n1c_test_variants
-NM_025152.3:c.815-27T>C,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
-NM_133433.4:c.5329-15A>G,splice correction:unlikely eligible,Unlikely eligible for splice correction,n1c_test_variants
-NM_139318.4:c.980G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
-NM_172107.2:c.998G>A,exon skipping:unlikely eligible;knockdown:unlikely eligible,Unlikely eligible for exon skipping and knockdown,gene_steps
-NM_172107.4:c.841G>A,knockdown:unlikely eligible,Unlikely eligible for knockdown,gene_steps
-NM_206933.4:c.2692C>T,exon skipping:eligible,Eligible for exon skipping,n1c_test_variants
+normalized_hgvs,N1C VARIANT outcome,inheritance,pathomechanism,source,parsed_outcome
+NM_001040142.2:c.5636T>C,Eligible for Knockdown;Unable to assess for splice correction,AD,gof,n1c_assessed_variants,knockdown:eligible;splice_correction:unable_to_assess
+NM_001130987.2:c.1276+5G>A,Not eligible for Splice Correction,AR,lof,n1c_assessed_variants,splice_correction:not_eligible
+NM_001130987.2:c.237-159_342+1237del,Not eligible for Exon skipping,AR,lof,n1c_assessed_variants,exon_skipping:not_eligible
+NM_001330260.2:c.5615G>A,Eligible for Knockdown;Unable to assess for splice correction,AD,gof,n1c_assessed_variants,knockdown:eligible;splice_correction:unable_to_assess
+NM_001040142.2:c.4780T>A,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001040142.2:c.5317G>A,Not eligible for Exon skipping;Unable to assess for splice correction,AD,lof,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_003494.4:c.533del,Not eligible for Exon skipping;Unable to assess for splice correction,AD,,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_001165963.4:c.2792G>A,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001165963.4:c.1709G>A,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001165963.4:c.3629C>T,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001165963.4:c.4916G>C,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001130987.2:c.4873C>T,Unlikely eligible for Exon skipping;Unable to assess for splice correction,AR,lof,n1c_assessed_variants,exon_skipping:unlikely_eligible;splice_correction:unable_to_assess
+NM_021007.3:c.2558G>A,Eligible for Knockdown;Unable to assess for splice correction,AD,complex,n1c_assessed_variants,knockdown:eligible;splice_correction:unable_to_assess
+NM_000070.3:c.2105C>T,Not eligible for Exon skipping;Unable to assess for splice correction,AR,,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_001165963.4:c.4465C>A,Unable to assess,AR,complex,n1c_assessed_variants,unable_to_assess
+NM_001130987.2:c.3167G>C,Not eligible for Exon skipping;Unable to assess for splice correction,AR,,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_001130987.2:c.5815_5816del,Not eligible for Exon skipping;Unable to assess for splice correction,AR,,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_001130987.2:c.268C>T,Not eligible for Exon skipping;Unable to assess for splice correction,AR,,n1c_assessed_variants,exon_skipping:not_eligible;splice_correction:unable_to_assess
+NM_001130987.2:c.3859dup,Unlikely eligible for Exon skipping;Unable to assess for splice correction,AR,,n1c_assessed_variants,exon_skipping:unlikely_eligible;splice_correction:unable_to_assess
+NM_001165963.4:c.2303C>T,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_021007.3:c.4782G>T,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001040142.2:c.2657T>C,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_001040142.2:c.1094C>T,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_006922.4:c.585_586del,Unlikely eligible for Exon skipping;Unable to assess for splice correction,AD,unknown,n1c_assessed_variants,exon_skipping:unlikely_eligible;splice_correction:unable_to_assess
+NM_001330260.2:c.3953A>G,Unable to assess,AD,unknown,n1c_assessed_variants,unable_to_assess
+NM_025152.3:c.815-27T>C,Unlikely eligible for splice correction,AR,lof,n1c_test_variants,splice_correction:unlikely_eligible
+NM_000350.3:c.769-784C>T,Eligible for splice correction,,,n1c_test_variants,splice_correction:eligible
+NM_020366.3:c.1468-128T>G,Eligible for splice correction,,,n1c_test_variants,splice_correction:eligible
+NM_000329.3:c.1430A>G,Likely eligible for splice correction and knockdown,AD,dn,n1c_test_variants,splice_correction:likely_eligible;knockdown:likely_eligible
+NM_001086521.2:c.195+271C>T,Likely eligible for splice correction,AR,lof,n1c_test_variants,splice_correction:likely_eligible
+NM_003907.3:c.1156+13G>A,Unlikely eligible for splice correction,AR,lof,n1c_test_variants,splice_correction:unlikely_eligible
+NM_206933.4:c.2692C>T,Eligible for exon skipping,,,n1c_test_variants,exon_skipping:eligible
+NM_000391.4:c.225A>G,Not eligible for splice correction,AR,lof,n1c_test_variants,splice_correction:not_eligible
+NM_024298.5:c.758_778del,Unable to assess,AR,,n1c_test_variants,unable_to_assess
+NM_018075.5:c.289del,Unlikely eligible for exon skipping,AR,lof,n1c_test_variants,exon_skipping:unlikely_eligible
+NM_024312.5:c.3503_3504del,Unlikely eligible for exon skipping,,,n1c_test_variants,exon_skipping:unlikely_eligible
+NM_003650.4:c.2035-946G>A,Unable to assess,,,n1c_test_variants,unable_to_assess
+NM_000303.3:c.640-15479C>T,Eligible for splice correction,,,n1c_test_variants,splice_correction:eligible
+NM_000202.8:c.1122C>T,Likely eligible for splice correction,AR,lof,n1c_test_variants,splice_correction:likely_eligible
+NM_018075.5:c.1025G>A,Not eligible for exon skipping,AR,lof,n1c_test_variants,exon_skipping:not_eligible
+NM_001127222.2:c.4174G>A,Unlikely eligible for knockdown,AD,gof,n1c_test_variants,knockdown:unlikely_eligible
+NM_024312.5:c.3488del,Unlikely eligible for exon skipping,,,n1c_test_variants,exon_skipping:unlikely_eligible
+NM_133433.4:c.5329-15A>G,Unlikely eligible for splice correction,AD,,n1c_test_variants,splice_correction:unlikely_eligible
+NM_014727.3:c.8079delC,Unable to assess,AD,,n1c_test_variants,unable_to_assess
+NM_024312.5:c.1123C>T,Unable to assess,AR,lof,n1c_test_variants,unable_to_assess
+NM_005859.5:c.159dup,Not eligible for exon skipping,AD,lof,n1c_test_variants,exon_skipping:not_eligible
+NM_001167623.2:c.1216G>A,Eligible for exon skipping,AD,gof,n1c_test_variants,exon_skipping:eligible
+NM_000561.4:c.1509-26G>A,Unable to assess,,,n1c_test_variants,unable_to_assess
+NM_000334.4:c.3891C>A,Unable to assess,,,n1c_test_variants,unable_to_assess
+NM_001244008.2:c.914C>T,Eligible for knockdown,AD,,n1c_test_variants,knockdown:eligible
+NM_000492.4:c.2989-313A>T,Likely eligible for splice correction,AR,,n1c_test_variants,splice_correction:likely_eligible
+NM_001194.4:c.736G>A,Likely eligible for knockdown,AD,gof,n1c_test_variants,knockdown:likely_eligible
+NM_000170.3:c.538C>T,Not eligible for exon skipping,AR,lof,n1c_test_variants,exon_skipping:not_eligible
+NM_000548.3:c.3598C>T,Unlikely eligible for exon skipping,AD,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_006178.3:c.1590_1592dup,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_012250.5:c.68G>A,Likely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:likely_eligible
+NM_001165963.2:c.4867G>C,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001330260.1:c.3967G>A,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001040142.1:c.3956G>C,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001330260.1:c.3953A>G,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_004539.3:c.1600C>T,Likely eligible for knockdown,AD,dn,gene_steps_assessed_variants,knockdown:likely_eligible
+NM_015559.3:c.2609G>A,Unlikely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:unlikely_eligible
+NM_020822.2:c.2651A>T,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001032221.3:c.569G>A,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_020822.2:c.1283G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+NM_001100913.2:c.625G>A,Likely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:likely_eligible
+NM_001165963.2:c.4547C>A,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_139318.4:c.980G>A,Unlikely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:unlikely_eligible
+NM_001165963.2:c.5602_5603insATCC,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_001376.4:c.6989G>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001136196.1:c.466G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+NM_014191.3:c.3926G>A,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001080517.1:c.1967T>G,Unlikely eligible for exon-skipping,AD,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_001040143.1:c.662T>C,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_006302.2:c.1461G>C,Unable to assess,AR,lof,gene_steps_assessed_variants,unable_to_assess
+NM_006302.2:c.2470G>A,Unable to assess,AR,lof,gene_steps_assessed_variants,unable_to_assess
+NM_004531.5:c.226G>A,Unable to assess,AR,lof,gene_steps_assessed_variants,unable_to_assess
+NM_001320.6:c.557G>A,Unable to assess,AD,lof,gene_steps_assessed_variants,unable_to_assess
+NM_021007.2:c.5287T>A,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_003359.3:c.193C>T,Unlikely eligible for exon-skipping,AR,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_003359.3:c.709A>G,Unable to assess,AR,lof,gene_steps_assessed_variants,unable_to_assess
+NM_014191.3:c.5630A>G,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+NM_014191.3:c.1178G>T,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001077350.2:c.290C>G,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_000425.3:c.2288G>C,Unable to assess,XLR,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_145239.2:c.872C>T,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_003482.3:c.8903dup,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001114183.1:c.1029G>C,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_172107.4:c.1955del,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_021008.4:c.709C>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_014191.4:c.4441A>G,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_021007.3:c.415A>G,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_172107.4:c.841G>A,Unlikely eligible for knockdown,AD,dn,gene_steps_assessed_variants,knockdown:unlikely_eligible
+NM_004211.5:c.296_297del,Unlikely eligible for exon skipping,AR,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_001160036.2:c.1448G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+NM_020822.3:c.1495C>A,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001165963.3:c.2593C>T,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_021032.4:c.341G>A,Likely Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:likely_eligible
+NM_001242896.3:c.3919G>T,Unlikely eligible for exon skipping,AD,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_172107.4:c.1043C>T,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_172107.4:c.1657C>T,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_020822.3:c.1283G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+NM_001165963.4:c.4493T>C,Unlikely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:unlikely_eligible
+NM_001165963.3:c.3724_3725dup,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_172107.4:c.725G>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001256071.3:c.12352T>C,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001101802.3:c.1956del,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_003165.3:c.260T>C,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001350626.1:c.1593G>A,Likely eligible for exon skipping,AR,lof,gene_steps_assessed_variants,exon_skipping:likely_eligible
+NM_172107.2:c.998G>A,Unlikely eligible for exon skipping and knockdown,AD,gof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible;knockdown:unlikely_eligible
+NM_001690.3:c.761G>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_014191.3:c.5615G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
+,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001165963.4:c.2303C>T,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001165963.4:c.1570G>T,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_000702.4:c.2936C>T,Unlikely eligible for exon skipping,AD,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible
+NM_001165963.4:c.3985C>T,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_005027.3:c.1117G>A,Likely eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:likely_eligible
+NM_172107.4:c.634G>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
+NM_001040142.2:c.5528A>G,Unable to assess,AD,unknown (likely gof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001165963.4:c.5542C>T,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
+NM_001165963.4:c.4997C>T,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_001165963.4:c.1876A>G,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
+NM_018026.3:c.607C>T,Eligible for knockdown,AD,dn,gene_steps_assessed_variants,knockdown:eligible
