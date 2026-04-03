@@ -13,6 +13,7 @@ import uuid
 import threading
 import time
 import litellm
+import pdb
 
 from dataclasses import dataclass
 from typing import Any
@@ -30,7 +31,7 @@ from aso_workflow.prompts import SYSTEM_PROMPTS
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
-DEFAULT_MODEL = "gemini/gemini-3-flash-preview"
+DEFAULT_MODEL = "gemini/gemini-3.1-flash-lite-preview"
 HELPER_MODEL =  "gemini/gemini-3.1-flash-lite-preview" # "gemini/gemma-3-27b-it"
 MAX_RAW_CONTENT_CHARS = 80_000
 MAX_TOOL_CALLS = 6
@@ -43,6 +44,11 @@ RATE_LIMITS = {
     "gemini/gemini-3.1-flash-lite-preview": {"tpm": 200_000, "rpm": 10},
     "gemini/gemma-3-27b-it": {"tpm": 12_000, "rpm": 30},
 }
+
+JSON_REPAIR_PROMPT = (
+    "Your previous response contained malformed JSON. Please repair it so it is valid JSON while preserving "
+    "the exact intended meaning. Return ONLY the repaired JSON. Do not wrap it in markdown fences."
+)
 
 openai_client = None
 if os.getenv("OPENAI_API_KEY"):
@@ -107,21 +113,28 @@ def call_llm(
         call_kwargs["tools"] = tools
     
     # handle openai/gemini native web search loop
+    # metadata will be returned with tool_call_logs in provider-specific format 
     if use_web_search:
-        res_text, tool_call_logs = _completion_with_native_tools(max_retries=max_retries, usage_acc=usage_acc, **call_kwargs)
+        res_text_or_json, tool_call_logs = _completion_with_native_tools(
+            max_retries=max_retries,
+            expect_json=expect_json,
+            usage_acc=usage_acc,
+            **call_kwargs
+        )
 
     else:
         if not _is_commercial_api_model(call_kwargs["model"]):
             # TODO: don't hardcode this
-            call_kwargs["api_base"] = "http://localhost:30009/v1"
+            call_kwargs["api_base"] = "http://localhost:3000/v1"
 
-        response = _completion_with_litellm(max_retries=max_retries, **call_kwargs)
+        response, res_text_or_json = _completion_with_litellm(max_retries=max_retries, expect_json=expect_json, **call_kwargs)
         _accumulate_usage(usage_acc, model, response)
         msg = response.choices[0].message
 
         if msg.content and "<tool_call>" in msg.content and msg.tool_calls is None:
             tool_call = _custom_parse_tool_call(msg.content)
-            msg.tool_calls = [tool_call]
+            if tool_call is not None:
+                msg.tool_calls = [tool_call]
 
         # Tool-use loop
         while (tools and hasattr(msg, "tool_calls") and msg.tool_calls and tool_calls_made < max_tool_calls):
@@ -176,66 +189,107 @@ def call_llm(
 
             # Call the LLM with the updated conversation history
             call_kwargs["messages"] = messages
-            response = _completion_with_litellm(max_retries=max_retries, **call_kwargs)
+            response, res_text_or_json = _completion_with_litellm(max_retries=max_retries, expect_json=expect_json, **call_kwargs)
             _accumulate_usage(usage_acc, model, response)
             msg = response.choices[0].message
 
-        res_text = msg.content or ""
 
     if not expect_json:
+        res_text = res_text_or_json
         return ({"_raw": res_text, "_tool_call_logs": tool_call_logs}, usage_acc)
 
-    try:
-        parsed = _text_to_json(res_text)
+    if isinstance(res_text_or_json, dict):
+        res_json = res_text_or_json
         if tool_call_logs:
-            parsed["_tool_call_log"] = tool_call_logs
-        return (parsed, usage_acc)
-    except json.JSONDecodeError as e:
-        return ({
-            "_raw": res_text,
-            "_parse_error": str(e),
-            "_tool_call_log": tool_call_logs,
-        }, usage_acc)
+            res_json["_tool_call_log"] = tool_call_logs
+        return (res_json, usage_acc)
+
+    # fallback (should rarely happen)
+    res_text = res_text_or_json
+    return ({
+        "_raw": res_text,
+        "_tool_call_log": tool_call_logs,
+    }, usage_acc)
 
 
-def _completion_with_litellm(max_retries: int, **call_kwargs) -> litellm.ModelResponse:
+def _completion_with_litellm(
+    max_retries: int,
+    expect_json: bool = False,
+    **call_kwargs
+) -> tuple[litellm.ModelResponse, dict | str]:
     """
-    Call litellm.completion with retries for API errors only.
-    Retries on RateLimitError, retriable HTTP errors, and ServiceUnavailableError.
-    Enforces RATE_LIMITS (rpm, tpm) per model before each request.
+    Call litellm.completion with retries
     """
     model = call_kwargs.get("model", DEFAULT_MODEL)
     last_error = None
+    repair_mode = False
+    malformed_text = None
     for attempt in range(max_retries + 1):
         try:
             _wait_for_rate_limit(model)
+            if repair_mode:
+                repair_messages = call_kwargs["messages"] + [
+                    {"role": "assistant", "content": malformed_text},
+                    {"role": "user", "content": JSON_REPAIR_PROMPT},
+                ]
+                call_kwargs["messages"] = repair_messages
+            
             response = litellm.completion(**call_kwargs)
             tokens = getattr(response.usage, "total_tokens", None) or 0
             _record_usage(model, tokens)
-            return response
-        except (litellm.exceptions.RateLimitError, httpx.HTTPStatusError, litellm.ServiceUnavailableError) as e:
+
+            msg = response.choices[0].message
+            text = msg.content or ""
+
+            # only the final message in a tool call convo
+            # needs to be json
+            if not expect_json or (hasattr(msg, "tool_calls") and msg.tool_calls):
+                return response, text
+        
+            # repair malformed json
+            try:
+                text = text.rstrip()[:-1] if text.rstrip().endswith("}}") else text
+                parsed = _text_to_json(text)
+                return response, parsed
+            except json.JSONDecodeError as e:
+                malformed_text = text
+                repair_mode = True
+                last_error = e
+                if attempt >= max_retries:
+                    break
+                continue
+
+        except (
+            litellm.exceptions.RateLimitError,
+            httpx.HTTPStatusError,
+            litellm.ServiceUnavailableError
+        ) as e:
             last_error = _handle_llm_error(e, attempt, max_retries)
+
+
     raise RuntimeError(f"LLM call failed after {max_retries} attempts. Last error: {last_error}")
 
 
 def _completion_with_native_tools(
     max_retries: int,
     usage_acc: dict,
+    expect_json: bool = False,
     **call_kwargs
-) -> tuple[str, list]:
+) -> tuple[dict | str, list]:
     """
-    Call an LLM API endpoint using their provider's native tool implementations.
+    Call an LLM API endpoint using native tools, with JSON retry handling.
     """
     model = call_kwargs.get("model")
     messages = call_kwargs.get("messages")
 
-    # should never hit this, as model is explicitly set in parent method
     if model is None or messages is None:
         raise ValueError("call_kwargs MUST include `model` and `messages`, but none found")
     
     role2content = {m["role"]: m["content"] for m in messages}
     system_prompt = role2content["system"]
     user_msg = role2content["user"]
+
+    last_error = None
 
     for attempt in range(max_retries + 1):
         try:
@@ -251,12 +305,11 @@ def _completion_with_native_tools(
                 response_dict = response.to_dict()
                 tool_call_logs = [r for r in response_dict["output"] if r.get("type") != "reasoning"]
                 _accumulate_usage(usage_acc, model, response)
-                return response.output_text, tool_call_logs
-            
+
+                text = response.output_text or ""
+
             elif model.startswith("gemini"):
-                search_tool = types.Tool(
-                    google_search=types.GoogleSearch()
-                )
+                search_tool = types.Tool(google_search=types.GoogleSearch())
                 response = gemini_client.models.generate_content(
                     model=model,
                     contents=user_msg,
@@ -271,15 +324,22 @@ def _completion_with_native_tools(
                     gm = getattr(response.candidates[0], "grounding_metadata", None)
                     if gm is not None:
                         tool_call_logs = [gm] if not isinstance(gm, list) else gm
-                _accumulate_usage(usage_acc, model, response)
-                return response.text or "", tool_call_logs
 
+                _accumulate_usage(usage_acc, model, response)
+                text = response.text or ""
 
             else:
                 raise NotImplementedError(f"Native search is not supported for model: {model}")
-        
-        except Exception as e:
+
+            if not expect_json:
+                return text, tool_call_logs
+
+            parsed = _text_to_json(text)
+            return parsed, tool_call_logs
+
+        except (json.JSONDecodeError, Exception) as e:
             last_error = _handle_llm_error(e, attempt, max_retries)
+
     raise RuntimeError(f"LLM call failed after {max_retries} attempts. Last error: {last_error}")
 
 
@@ -381,6 +441,9 @@ def _handle_llm_error(e: Exception, attempt: int, max_retries: int) -> str:
     if isinstance(e, litellm.exceptions.RateLimitError):
         time.sleep(2 ** attempt)
         return f"Rate limit: {e}"
+    
+    if isinstance(e, json.JSONDecodeError):
+        return f"JSON decode error: {e}"
 
     if isinstance(e, httpx.HTTPStatusError):
         status = e.response.status_code
