@@ -38,12 +38,12 @@ app.add_middleware(
 
 # Mirrors ASOAssessmentPipeline.STEP_MAP keys (single source for route list)
 PIPELINE_STEP_NAMES: tuple[str, ...] = tuple(ASOAssessmentPipeline.STEP_MAP.keys())
-
+DEFAULT_MODEL_NAME = "gemini/gemini-3.1-flash-lite-preview"
 
 class PipelineOptions(BaseModel):
     """LLM and data-source options; matches ASOAssessmentPipeline constructor."""
 
-    model_name: Optional[str] = "gemini/gemini-3.1-flash-lite-preview"
+    model_name: Optional[str] = DEFAULT_MODEL_NAME
     llm_only: bool = False
     use_web_search: bool = False
     verbose: bool = False

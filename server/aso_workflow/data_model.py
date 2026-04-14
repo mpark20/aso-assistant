@@ -148,6 +148,7 @@ class ASOAssessmentReport:
                     "summary": r.summary,
                     "reasoning": r.reasoning,
                     "metadata": r.metadata,
+                    "data_used": r.data_used,
                     "error": r.error,
                     "token_usage": r.token_usage,
                 }
