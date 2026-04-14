@@ -315,7 +315,7 @@ your JSON assessment.
 
         context.hgvs_normalized = norm_hgvs
         context.gene_id = mutalyzer_data.get("gene_id")
-        context.intronic_or_exonic = "intronic" if mutalyzer_data.get("offset") != 0 else "exonic"
+        context.intronic_or_exonic = mutalyzer_data.get("location")
         context.refseq_id = mutalyzer_data.get("refseq_id")
 
         context.variant_valid = result.get("variant_valid", False)
@@ -853,7 +853,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
                 "canonical_splicing_destroyed": result.get("canonical_splicing_destroyed"),
                 "wildtype_transcript_detectable": result.get("wildtype_transcript_detectable"),
                 "variant_distance_from_splice_site_bp": result.get("variant_distance_from_splice_site_bp"),
-                "intronic_or_exonic": "intronic" if mutalyzer_data.get("offset") != 0 else "exonic",
+                "intronic_or_exonic": mutalyzer_data.get("location"),
                 "aso_evidence_found": result.get("aso_evidence_found", False),
                 "aso_evidence_description": result.get("aso_evidence_description", ""),
                 "warnings": result.get("warnings", []),

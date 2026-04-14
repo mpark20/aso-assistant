@@ -5,7 +5,7 @@ NOTE: search_serper, search_serper_scholar, and browse_webpage
 implementations are from [rlresearch/dr-tulu](https://github.com/rlresearch/dr-tulu/tree/c786700ca63d323ed32f8749eec7ef1562c8ee8c/agent/dr_agent/mcp_backend/apis).
 """
 import json
-import pdb
+import re
 import os
 import requests
 import time
@@ -571,17 +571,24 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
     errors = data.get("errors") if "errors" in data else (data.get("custom") or {}).get("errors")
     if errors:
         errors = errors if isinstance(errors, list) else []
-        if len(errors) > 0 and any([e.get("code") == "EINTRONIC" for e in errors]):
-            location = "intronic"
-            data = data["custom"]
-        elif len(errors) > 0:
-            err_str = "\n".join([json.dumps(e) for e in errors])
-            return MutalyzerResult(
-                normalized=None,
-                gene_id=None,
-                type=None,
-                error=err_str
-            )
+        # for intronic variants, try to retry with the suggested HGVS
+        for err in errors:
+            if err.get("code") == "EINTRONIC":
+                options = err.get("options", [])
+                for opt in options:
+                    if opt.get("assembly_id") == "GRCh38":
+                        retry_hgvs = opt.get("description")
+                        return search_mutalyzer(retry_hgvs)
+
+
+        # otherwise, return the error
+        err_str = "\n".join([json.dumps(e) for e in errors])
+        return MutalyzerResult(
+            normalized=None,
+            gene_id=None,
+            type=None,
+            error=err_str
+        )
 
     normalized = (
         data.get("normalized_description")
@@ -647,6 +654,12 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
     protein_desc = (data.get("protein") or {}).get("description")
     if protein_desc:
         equivalent_descriptions.append(protein_desc)
+    
+    # if the refseq has parentheticals like NC_123(NM_456), only keep the NM part
+    if "NC_" in normalized and "(" in normalized and ")" in normalized:
+        pattern = r'^NC_[^()]*\(([^)]+)\):(.*)$'
+        replacement = r'\1:\2'
+        normalized = re.sub(pattern, replacement, normalized)
 
     result = MutalyzerResult(
         normalized=normalized,
