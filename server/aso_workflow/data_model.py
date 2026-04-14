@@ -17,6 +17,7 @@ class EligibilityClassification(str, Enum):
     UNLIKELY_ELIGIBLE = "unlikely_eligible"
     NOT_ELIGIBLE = "not_eligible"
     UNABLE_TO_ASSESS = "unable_to_assess"
+    APPLICABLE = "applicable"  # special case for wt upregulation, as eligibility depends on having an established therapeutic
     NOT_APPLICABLE = "not_applicable"  # step was skipped for this variant
 
 

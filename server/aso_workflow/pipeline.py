@@ -1431,6 +1431,11 @@ Please synthesize these results into the final report JSON.
 
         # ── Extract classifications from step results ─────────────────
         def get_classification(step_name: str) -> EligibilityClassification:
+            # first, check formatted llm summary
+            assessments = result.get("strategy_assessments", {})
+            if assessments.get(step_name, {}).get("classification"):
+                return EligibilityClassification(assessments[step_name]["classification"])
+            # if report failed to generate, use raw step result
             r = step_results.get(step_name)
             return r.classification if r else EligibilityClassification.NOT_APPLICABLE
 

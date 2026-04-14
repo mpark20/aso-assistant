@@ -456,8 +456,8 @@ Goal: upregulate WT gene product using ASO-based strategies.
 - Less commonly used
 
 ### Important notes:
-- Only "eligible" if an upregulation therapeutic strategy has been established with sufficient functional evidence
-- If alternative splicing events are identified but don't have an established therapeutic strategy, classify as "no_strategy_identified" but mention the findings in the summary.
+- Only "eligible" if an upregulation therapeutic strategy has been established with sufficient functional evidence showing efficacy and safety in the given variant.
+- If the variant seems like a potential candidate (e.g. has alternative splicing events) but no established upregulation therapeutic for the variant has been identified, classify as "applicable"
 - Always check: GTEx and VastDB for tissue expression of regulatory elements; expression in target tissue matters
 
 ### X-linked considerations:
@@ -475,7 +475,7 @@ Goal: upregulate WT gene product using ASO-based strategies.
   "uorf_identified": true | false | null,
   "uorf_details": "<uORF details if found>",
   "established_wt_upregulation_strategy": true | false,
-  "wt_upregulation_classification": "eligible" | "strategy_available_needs_validation" | "no_strategy_identified" | "not_applicable",
+  "wt_upregulation_classification": "eligible" | "applicable" | "not_applicable",
   "wt_upregulation_summary": "<concise summary of what strategies exist or are absent>",
   "recommended_next_steps": ["<specific databases/papers to check>"],
   "warnings": ["<caveats, e.g. X-inactivation issues>"]

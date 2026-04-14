@@ -41,9 +41,9 @@ NM_000202.8:c.1122C>T,Likely eligible for splice correction,AR,lof,n1c_test_vari
 NM_018075.5:c.1025G>A,Not eligible for exon skipping,AR,lof,n1c_test_variants,exon_skipping:not_eligible
 NM_001127222.2:c.4174G>A,Unlikely eligible for knockdown,AD,gof,n1c_test_variants,knockdown:unlikely_eligible
 NM_024312.5:c.3488del,Unlikely eligible for exon skipping,,,n1c_test_variants,exon_skipping:unlikely_eligible
-NM_133433.4:c.5329-15A>G,Unlikely eligible for splice correction,AD,,n1c_test_variants,splice_correction:unlikely_eligible
+NM_133433.4:c.5329-15A>G,Unlikely eligible for splice correction;applicable for WT upregulation,AD,,n1c_test_variants,splice_correction:unlikely_eligible;wt_upregulation:applicable
 NM_014727.3:c.8079delC,Unable to assess,AD,,n1c_test_variants,unable_to_assess
-NM_024312.5:c.1123C>T,Unable to assess,AR,lof,n1c_test_variants,unable_to_assess
+NM_024312.5:c.1123C>T,Not eligible for exon skipping,AR,lof,n1c_test_variants,exon_skipping:not_eligible
 NM_005859.5:c.159dup,Not eligible for exon skipping,AD,lof,n1c_test_variants,exon_skipping:not_eligible
 NM_001167623.2:c.1216G>A,Eligible for exon skipping,AD,gof,n1c_test_variants,exon_skipping:eligible
 NM_000561.4:c.1509-26G>A,Unable to assess,,,n1c_test_variants,unable_to_assess
