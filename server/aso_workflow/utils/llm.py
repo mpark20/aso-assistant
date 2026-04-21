@@ -32,7 +32,7 @@ from aso_workflow.prompts import SYSTEM_PROMPTS
 
 # ── Constants ────────────────────────────────────────────────────────────────
 DEFAULT_MODEL = "gemini/gemini-3.1-flash-lite-preview"
-HELPER_MODEL =  "gemini/gemini-3.1-flash-lite-preview" # "gemini/gemma-3-27b-it"
+HELPER_MODEL =  "gpt-5-nano" # "gemini/gemma-3-27b-it"
 MAX_RAW_CONTENT_CHARS = 80_000
 MAX_TOOL_CALLS = 6
 
@@ -267,6 +267,7 @@ def _completion_with_litellm(
             last_error = _handle_llm_error(e, attempt, max_retries)
 
 
+    print(f"LLM call failed after {max_retries} attempts. Last error: {last_error}")
     raise RuntimeError(f"LLM call failed after {max_retries} attempts. Last error: {last_error}")
 
 
@@ -449,15 +450,15 @@ def _handle_llm_error(e: Exception, attempt: int, max_retries: int) -> str:
         status = e.response.status_code
         if not status in (429, 500, 502, 503, 504):
             raise
-        wait = 2 ** attempt
-        print(f"LLM HTTP {status}. Retrying in {wait}s... ({attempt + 1}/{max_retries})")
+        wait = 2 ** (attempt+1)
+        print(f"LLM HTTP {status}. Retrying in {wait}s... ({attempt}/{max_retries})")
         time.sleep(wait)
         return f"HTTP {status}: {e}"
 
     if isinstance(e, litellm.ServiceUnavailableError):
         status = e.response.status_code if e.response is not None else "unknown"
-        wait = 2 ** attempt
-        print(f"LLM HTTP {status}. Retrying in {wait}s... ({attempt + 1}/{max_retries})")
+        wait = 2 ** (attempt+1)
+        print(f"LLM HTTP {status}. Retrying in {wait}s... ({attempt}/{max_retries})")
         time.sleep(wait)
         return f"HTTP {status}: {e}"
 

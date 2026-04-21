@@ -294,7 +294,7 @@ def _filter_ipr_domains(
             if not isinstance(value, dict) or "start" not in value or "end" not in value:
                 continue
             start, end = value["start"], value["end"]
-            if (start <= aa_range[0] <= end) or (start <= aa_range[1] <= end):
+            if (aa_range[0] <= start <= aa_range[1]) or (aa_range[0] <= end <= aa_range[1]):
                 result = {"name": name, "interpro_id": ipr_id, "go_terms": go_terms}
                 if add_details:
                     result = browse_interpro(ipr_id)

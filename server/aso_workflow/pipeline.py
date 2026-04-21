@@ -1434,7 +1434,7 @@ Please synthesize these results into the final report JSON.
             # first, check formatted llm summary
             assessments = result.get("strategy_assessments", {})
             if assessments.get(step_name, {}).get("classification"):
-                return EligibilityClassification(assessments[step_name]["classification"])
+                return EligibilityClassification(assessments[step_name]["classification"].replace(" ", "_"))
             # if report failed to generate, use raw step result
             r = step_results.get(step_name)
             return r.classification if r else EligibilityClassification.NOT_APPLICABLE

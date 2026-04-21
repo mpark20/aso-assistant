@@ -226,7 +226,7 @@ if __name__ == "__main__":
         "-d", "--data-file",
         type=Path,
         help="Path to spreadsheet (xlsx or csv) with columns 'hgvs' and 'parsed_outcome'",
-        default=Path("data/parsed_n1c_assessments_v2.csv")
+        default=Path("data/parsed_n1c_assessments.csv")
     )
     # this is for the MAIN model, the helper model is hardcoded to gemini/gemini-3.1-flash-lite-preview
     parser.add_argument(

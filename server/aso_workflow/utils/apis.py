@@ -651,6 +651,12 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
                     break
     
     equivalent_descriptions = data.get("equivalent_descriptions") or []
+    # TODO: handle case where equivalent_descriptions is a dict
+    if isinstance(equivalent_descriptions, dict):
+        if len(equivalent_descriptions.get('g', [])) > 0:
+            equivalent_descriptions = [d['description'] for d in equivalent_descriptions['g']]
+    if not isinstance(equivalent_descriptions, list):
+        equivalent_descriptions = []
     protein_desc = (data.get("protein") or {}).get("description")
     if protein_desc:
         equivalent_descriptions.append(protein_desc)
@@ -951,7 +957,7 @@ def search_ensembl_vep(hgvs: str) -> EnsemblVEPResult:
 
     refseq_id = hgvs.split(":")[0]
     for tc in result.get("transcript_consequences", []):
-        if tc.get("mane") and tc.get("mane_select", "") == refseq_id:
+        if tc.get("mane") and (tc.get("mane_select", "") == refseq_id or tc.get("mane_plus_clinical", "") == refseq_id):
             #for k in ["biotype", "gene_symbol", "cds_start", "cds_end", "protein_start", "protein_end", "used_ref", "variant_allele", "amino_acids", "consequence_terms"]:
             for k in tc.keys():
                 data[k] = tc.get(k)
