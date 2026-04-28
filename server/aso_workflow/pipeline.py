@@ -207,6 +207,10 @@ class ASOAssessmentPipeline:
             step_results["wt_upregulation"] = result
             self._log(f"  ✓ WT upregulation: {result.classification.value}")
             self._log(f"    {result.summary}")
+        
+        # Return early if only running invidual steps
+        if steps_to_run:
+            return step_results
 
         # ── Final Report ──────────────────────────────────────────
         self._log("\nGenerating final report...")
@@ -315,7 +319,7 @@ your JSON assessment.
 
         context.hgvs_normalized = norm_hgvs
         context.gene_id = mutalyzer_data.get("gene_id")
-        context.intronic_or_exonic = mutalyzer_data.get("location")
+        context.intronic_or_exonic = "intronic" if mutalyzer_data.get("intronic") else "exonic"
         context.refseq_id = mutalyzer_data.get("refseq_id")
 
         context.variant_valid = result.get("variant_valid", False)
@@ -755,6 +759,7 @@ functional evidence. In silico predictions are NOT sufficient.
 Apply Step 3 criteria (Table 3) and return your JSON assessment.
 """
         else:
+            # reuse data from previous steps
             if "clinvar" not in context.raw_cache:
                 clinical_context = fetch_clinical_context(hgvs)
                 clinvar_data = clinical_context.get("clinvar")
@@ -764,16 +769,33 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             if "ensembl_vep" not in context.raw_cache:
                 context.raw_cache["ensembl_vep"] = search_ensembl_vep(norm_hgvs)
             vep_data = context.raw_cache.get("ensembl_vep")
+
             if "aso_check_pubmed" not in context.raw_cache:
                 aso_check_result = self.run_aso_check(norm_hgvs, context)
                 if isinstance(aso_check_result, dict):
                     context.raw_cache["aso_check_pubmed"] = aso_check_result
             aso_check = context.raw_cache.get("aso_check_pubmed")
+
+            # fetch data specific to this step
             transcript_ctx = fetch_transcript_context(norm_hgvs)
+            context.raw_cache["transcript_context"] = transcript_ctx
+
+            search_query = f"{gene} AND (splicing)"
+            equiv = mutalyzer_data.get("equivalent_descriptions") or []
+            synonyms = [norm_hgvs] + equiv
+            if clinvar_data and clinvar_data.get("protein_change"):
+                synonyms.append(clinvar_data.get("protein_change"))
+            synonyms = list(set([name.split(":")[-1] for name in synonyms if name]))
+            if len(synonyms) > 0:
+                name_str = " OR ".join([f"({s})" for s in synonyms])
+                search_query += f" AND ({name_str})"
+            pubmed_results = self._get_pubmed_pmc_results(search_query)
 
             raw_data = {
                 "vep": vep_data,
                 "transcript_context": transcript_ctx,
+                "clinvar": clinvar_data,
+                "pubmed": pubmed_results,
             }
 
             cached_info = ""
@@ -800,6 +822,9 @@ ENSEMBL VEP ANNOTATION:
 
 CLINVAR DATA:
 {clinvar_data}
+
+PUBMED SEARCH RESULTS:
+{pubmed_results}
 
 Important: Only RNAseq, qPCR, or cDNA from patient-derived cells counts as sufficient 
 functional evidence. In silico predictions are NOT sufficient.
@@ -853,7 +878,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
                 "canonical_splicing_destroyed": result.get("canonical_splicing_destroyed"),
                 "wildtype_transcript_detectable": result.get("wildtype_transcript_detectable"),
                 "variant_distance_from_splice_site_bp": result.get("variant_distance_from_splice_site_bp"),
-                "intronic_or_exonic": mutalyzer_data.get("location"),
+                "intronic_or_exonic": "intronic" if mutalyzer_data.get("intronic") else "exonic",
                 "aso_evidence_found": result.get("aso_evidence_found", False),
                 "aso_evidence_description": result.get("aso_evidence_description", ""),
                 "warnings": result.get("warnings", []),
@@ -1419,6 +1444,7 @@ CONTEXT SUMMARY:
 - CNV Gain: {context.is_cnv_gain}, CNV Loss: {context.is_cnv_loss}
 
 Please synthesize these results into the final report JSON.
+Do not change the classification labels in the step results.
 """
 
         result, usage = call_llm(
@@ -1434,7 +1460,11 @@ Please synthesize these results into the final report JSON.
             # first, check formatted llm summary
             assessments = result.get("strategy_assessments", {})
             if assessments.get(step_name, {}).get("classification"):
-                return EligibilityClassification(assessments[step_name]["classification"].replace(" ", "_"))
+                try:
+                    return EligibilityClassification(assessments[step_name]["classification"].replace(" ", "_"))
+                except Exception as e:
+                    print(e)
+                    pass
             # if report failed to generate, use raw step result
             r = step_results.get(step_name)
             return r.classification if r else EligibilityClassification.NOT_APPLICABLE

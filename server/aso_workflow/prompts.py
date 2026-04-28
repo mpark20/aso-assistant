@@ -29,7 +29,7 @@ assessment by these guidelines.
 - For CNV LOSS of a whole gene with one WT copy remaining → flag is_cnv_loss=true (Section C applies)
 - For CNV LOSS of both copies or hemizygous gene → unable_to_assess
 
-### Output format (JSON only, no other text):
+### Output format (it is extremely important that the output is strictly JSON only, no other outside text):
 {
   "classification": "eligible" | "unable_to_assess",
   "variant_valid": true | false,
@@ -458,6 +458,7 @@ Goal: upregulate WT gene product using ASO-based strategies.
 ### Important notes:
 - Only "eligible" if an upregulation therapeutic strategy has been established with sufficient functional evidence showing efficacy and safety in the given variant.
 - If the variant seems like a potential candidate (e.g. has alternative splicing events) but no established upregulation therapeutic for the variant has been identified, classify as "applicable"
+- Otherwise, classify as "not_eligible". "likely eligible" and "unlikely eligible" classifications are NOT permitted for this section.
 - Always check: GTEx and VastDB for tissue expression of regulatory elements; expression in target tissue matters
 
 ### X-linked considerations:
@@ -496,9 +497,8 @@ The report must include:
 4. Important caveats and next steps
 5. Overall recommendation
 
-Be precise about which classifications come from which evidence. Distinguish between 
-"eligible" (proven), "likely eligible" (criteria met but unproven), "unlikely eligible" 
-(criteria mostly met but hurdles exist), and "not eligible" (hard disqualifier).
+Be precise about which classifications come from which evidence. You will be given notes
+and eligibility labels for each ASO strategy within the step results.
 
 Output in JSON with the following structure:
 {

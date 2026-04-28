@@ -31,7 +31,7 @@ def sanitize_hgvs_for_filename(hgvs: str, max_length: int = 120) -> str:
     return safe[:max_length] if len(safe) > max_length else safe
 
 
-def load_variants(spreadsheet_path: Path, split="val") -> pd.DataFrame:
+def load_variants(spreadsheet_path: Path, split="n1c_test_variants") -> pd.DataFrame:
     """Load variants from spreadsheet (xlsx or csv)."""
     path_str = str(spreadsheet_path)
     if path_str.endswith('.csv'):
@@ -48,8 +48,7 @@ def load_variants(spreadsheet_path: Path, split="val") -> pd.DataFrame:
             f"Found columns: {list(df.columns)}"
         )
     
-    if split=="val":
-        df = df.loc[df["source"] == "n1c_test_variants"].reset_index()
+    df = df.loc[df["source"] == split].reset_index()
 
     return df
 
@@ -64,7 +63,7 @@ def parse_outcome_str(outcome_str: str) -> dict:
     """
     parts = outcome_str.split(";")
     parsed = {k:"not_applicable" for k in ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]}
-    if outcome_str == "unable to assess":
+    if outcome_str == "unable_to_assess":
         return {k:"unable_to_assess" for k in parsed.keys()}
     for part in parts:
         if ':' in part:
@@ -103,14 +102,7 @@ def score_result(true_outcome: dict, pred_outcome: dict) -> dict:
     return score
 
 
-def main(
-    input_file: Path,
-    model_name: str,
-    num_examples: int = None,
-    verbose: bool = True,
-    llm_only: bool = False,
-    use_web_search: bool = False,
-) -> None:
+def main(args) -> None:
     """Run pipeline on each variant, writing results to disk as processed.
     
     Args:
@@ -121,6 +113,13 @@ def main(
         llm_only: If True, bypass database calls in all steps; only gene, norm_hgvs, and instruction are added to prompts
         use_web_search: If True, llm calls will use the model provider's native web search tool.
     """
+    input_file = args.data_file
+    model_name = args.model_name
+    num_examples = args.num_examples
+    verbose = not args.quiet
+    llm_only = args.llm_only
+    use_web_search = args.use_web_search
+
     output_dir = f"outputs/{model_name.split('/')[-1]}"
     
     if llm_only:
@@ -129,9 +128,11 @@ def main(
         output_dir += "__web-search"
     os.makedirs(output_dir, exist_ok=True)
 
-    df = load_variants(input_file)
+    df = load_variants(input_file, split="n1c_test_variants")
     if num_examples:
         df = df.iloc[:num_examples]
+    if args.hgvs:
+        df = df[df['hgvs'] == args.hgvs]
     
     pipeline = ASOAssessmentPipeline(
         model_name=model_name,
@@ -165,6 +166,9 @@ def main(
             if verbose:
                 print(f"[{idx + 1}/{total}] Skipping (already exists): {hgvs}")
             skipped += 1
+            report = json.load(open(out_path))
+            pred_outcomes.append(report['predicted_outcome'])
+            true_outcomes.append(parse_outcome_str(row['parsed_outcome'].strip()))
             continue
 
         if verbose:
@@ -206,8 +210,7 @@ def main(
             if verbose:
                 print(f"  ✗ Failed: {e}")
 
-            # to account for free tier rate limits
-            time.sleep(5)
+            time.sleep(1)
 
     scores = [score_result(true_outcome, pred_outcome) for true_outcome, pred_outcome in zip(true_outcomes, pred_outcomes)]
     print(f"Average score: {sum(scores) / len(scores)}")
@@ -244,6 +247,7 @@ if __name__ == "__main__":
         "-n", "--num-examples",
         type=int, default=None, help="Number of examples to evaluate (default: all)"
     )
+    parser.add_argument("--hgvs", type=str, default=None, help="HGVS to evaluate (default: all)")
     parser.add_argument(
         "--use-web-search",
         action="store_true",
@@ -262,11 +266,4 @@ if __name__ == "__main__":
     
     print(args)
 
-    main(
-        args.data_file,
-        args.model_name,
-        num_examples=args.num_examples,
-        verbose=not args.quiet,
-        llm_only=args.llm_only,
-        use_web_search=args.use_web_search,
-    )
+    main(args)

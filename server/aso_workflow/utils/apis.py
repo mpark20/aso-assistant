@@ -567,7 +567,6 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
     except Exception as exc:
         raise ValueError(f"Unexpected Mutalyzer error: {exc}") from exc
 
-    location = "exonic"
     errors = data.get("errors") if "errors" in data else (data.get("custom") or {}).get("errors")
     if errors:
         errors = errors if isinstance(errors, list) else []
@@ -673,11 +672,11 @@ def search_mutalyzer(variant: str, return_exons: bool = False) -> MutalyzerResul
         type=data.get("corrected_model", {}).get("type"),
         deleted=deleted,
         inserted=inserted,
-        location=location,
         equivalent_descriptions=equivalent_descriptions,
     )
-    if location == "intronic":
-        result["offset"] = offset
+    result["intronic"] = offset is not None and str(offset) != '0'
+    result["offset"] = offset
+    
     if coding_pos:
         result["coding_position"] = coding_pos
     if exon_num:

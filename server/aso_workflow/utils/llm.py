@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 from litellm.types.utils import Function, ChatCompletionMessageToolCall
 from openai import OpenAI
 from google import genai
+from anthropic import Anthropic
 from google.genai import types
 
 load_dotenv()
@@ -50,14 +51,20 @@ JSON_REPAIR_PROMPT = (
     "the exact intended meaning. Return ONLY the repaired JSON. Do not wrap it in markdown fences."
 )
 
+# API clients
 openai_client = None
 if os.getenv("OPENAI_API_KEY"):
-    openai_client = OpenAI()
+    openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 gemini_client = None
 if os.getenv("GEMINI_API_KEY"):
     gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+anthropic_client = None
+if os.getenv("ANTHROPIC_API_KEY"):
+    anthropic_client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+# rate limiting objects
 _rate_limit_state: dict[str, dict] = {}
 _rate_limit_lock = threading.Lock()
 
@@ -293,10 +300,11 @@ def _completion_with_native_tools(
     last_error = None
 
     for attempt in range(max_retries + 1):
+        # TODO: handle translation of call_kwargs into provider-specific kwargs
         try:
             _wait_for_rate_limit(model)
 
-            if model.startswith("gpt-"):
+            if model.startswith("gpt-") or model.startswith("openai"):
                 response = openai_client.responses.create(
                     model=model,
                     instructions=system_prompt,
@@ -328,6 +336,19 @@ def _completion_with_native_tools(
 
                 _accumulate_usage(usage_acc, model, response)
                 text = response.text or ""
+            
+            elif model.startswith("claude-") or model.startswith("anthropic"):
+                response = anthropic_client.messages.create(
+                    model=model,
+                    system=system_prompt,
+                    messages=[{"role": "user", "content": user_msg}],
+                    max_tokens=call_kwargs.get("max_tokens", 32000),  # this param is required for the claude api
+                    tools=[{"type": "web_search_20260209", "name": "web_search", "max_uses": 5}],
+                )
+                tool_call_logs = response.to_dict().get("content", [])
+                _accumulate_usage(usage_acc, model, response)
+                text = "".join([block.text for block in response.content if hasattr(block, "type") and block.type == "text"])
+
 
             else:
                 raise NotImplementedError(f"Native search is not supported for model: {model}")
@@ -519,6 +540,8 @@ def _accumulate_usage(usage_accumulator: dict, model: str, response: litellm.Mod
 def _text_to_json(text: str) -> dict:
     """Strip markdown code fences and parse JSON."""
     text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL)
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
     text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
     text = re.sub(r"\s*```$", "", text.strip(), flags=re.MULTILINE)
     return json.loads(text)
