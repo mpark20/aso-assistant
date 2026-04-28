@@ -155,4 +155,6 @@ class ASOAssessmentReport:
                 }
                 for name, r in self.step_results.items()
             },
+            "model_name": self.model_name,
+            "date": self.date,
         }

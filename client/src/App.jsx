@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 
-const API_BASE = "http://localhost:8000";
+// const API_BASE = "http://localhost:8080";
+const API_BASE = "https://snugly-shining-dreadful.ngrok-free.dev"
 
 const STEP_ORDER = [
   "variant_check",
@@ -21,7 +22,17 @@ const STEP_LABELS = {
   splicing_effects: "Splicing effects",
   exon_skipping: "Exon skipping",
   knockdown: "Transcript knockdown",
+  wt_upregulation: "WT upregulation",
 };
+
+/** Steps where users may override the eligibility classification before continuing. */
+const STEPS_WITH_CLASSIFICATION_EDITOR = new Set([
+  "variant_check",
+  "splicing_effects",
+  "exon_skipping",
+  "knockdown",
+  "wt_upregulation",
+]);
 
 const STRATEGY_LABELS = {
   splice_correction: "Splice correction",
@@ -37,6 +48,7 @@ const CLS_CONFIG = {
   unable_to_assess: { label: "unable to assess", bg: "#FAEEDA", color: "#854F0B", dot: "#854F0B" },
   not_applicable: { label: "not applicable", bg: "var(--color-background-secondary)", color: "var(--color-text-secondary)", dot: "var(--color-text-tertiary)" },
   unlikely_eligible: { label: "unlikely eligible", bg: "#FBEAF0", color: "#993556", dot: "#993556" },
+  applicable: { label: "applicable", bg: "#E8EEF7", color: "#1E40AF", dot: "#1E40AF" },
 };
 
 function Badge({ cls, small }) {
@@ -83,17 +95,146 @@ function ProgressBar({ current, total }) {
   );
 }
 
-function StepCard({ stepKey, result, isRunning, isPending }) {
+/** Same display rules as the former StepCard reasoning block (JSON object → show `reason` when truthy). */
+function formatReasoningDisplay(reasoning) {
+  if (reasoning == null || reasoning === "") return "";
+  if (typeof reasoning === "string") {
+    try {
+      const parsed = JSON.parse(reasoning);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed.reason || reasoning;
+      }
+    } catch {
+      /* use full string */
+    }
+    return reasoning;
+  }
+  return JSON.stringify(reasoning, null, 2);
+}
+
+/** Collapsible raw sources JSON; shared by StepResultDetail and the review panel. */
+function StepResultDataUsed({ dataUsed, defaultOpen = false }) {
+  const [dataOpen, setDataOpen] = useState(defaultOpen);
+  if (!dataUsed || Object.keys(dataUsed).length === 0) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Data used</span>
+        <button
+          type="button"
+          onClick={() => setDataOpen(o => !o)}
+          style={{
+            fontSize: 11,
+            color: "var(--color-text-tertiary)",
+            background: "var(--color-background-secondary)",
+            border: "0.5px solid var(--color-border-tertiary)",
+            borderRadius: "var(--border-radius-md)",
+            padding: "3px 8px",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {dataOpen ? "Hide" : "Show"} sources
+        </button>
+      </div>
+      {dataOpen && (
+        <pre style={{
+          background: "var(--color-background-secondary)",
+          borderRadius: "var(--border-radius-md)",
+          padding: "10px 12px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--color-text-secondary)",
+          overflowX: "auto",
+          maxHeight: 280,
+          lineHeight: 1.5,
+          margin: 0,
+        }}>
+          {JSON.stringify(dataUsed, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Shared body: summary, reasoning (formatted), warnings, data_used, token_usage.
+ * Used inside StepCard.
+ */
+function StepResultDetail({ result, defaultDataOpen = false }) {
+  if (!result) return null;
+
+  const reasoningText = formatReasoningDisplay(result.reasoning);
+
+  return (
+    <>
+      {result.summary && (
+        <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, margin: "0 0 12px" }}>
+          {result.summary}
+        </p>
+      )}
+      {result.reasoning && (
+        <>
+          <p style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)", margin: "0 0 6px" }}>
+            Reasoning
+          </p>
+          <p style={{
+            fontSize: 13,
+            color: "var(--color-text-secondary)",
+            lineHeight: 1.6,
+            margin: "0 0 12px",
+            whiteSpace: "pre-wrap",
+          }}>
+            {reasoningText}
+          </p>
+        </>
+      )}
+      {result.metadata?.warnings?.length > 0 && (
+        <div style={{ marginBottom: 10 }}>
+          {result.metadata.warnings.map((w, i) => (
+            <div key={i} style={{
+              fontSize: 12, color: "#854F0B", background: "#FAEEDA",
+              borderRadius: "var(--border-radius-md)", padding: "6px 10px", marginBottom: 4, lineHeight: 1.4,
+            }}>
+              {w}
+            </div>
+          ))}
+        </div>
+      )}
+      <StepResultDataUsed dataUsed={result.data_used} defaultOpen={defaultDataOpen} />
+      {result.token_usage && Object.keys(result.token_usage).length > 0 && (
+        <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {Object.entries(result.token_usage).map(([model, usage]) => (
+            <span key={model} style={{
+              fontSize: 11,
+              color: "var(--color-text-tertiary)",
+              background: "var(--color-background-secondary)",
+              border: "0.5px solid var(--color-border-tertiary)",
+              borderRadius: "var(--border-radius-md)",
+              padding: "3px 8px",
+              fontFamily: "var(--font-mono)",
+            }}>
+              {model}: {(usage.total_tokens || 0).toLocaleString()} tokens
+            </span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function StepCard({ stepKey, result, isRunning, isPending, isReviewing }) {
   const [open, setOpen] = useState(false);
-  const [dataOpen, setDataOpen] = useState(false);
 
   const statusDot = isRunning
     ? <Spinner size={13} />
-    : isPending
-      ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-border-secondary)", display: "inline-block" }} />
-      : result
-        ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: CLS_CONFIG[result.classification]?.dot || "#888", display: "inline-block" }} />
-        : null;
+    : isReviewing
+      ? <span title="Awaiting your review" style={{ width: 8, height: 8, borderRadius: "50%", background: "#C2870F", display: "inline-block", boxShadow: "0 0 0 2px rgba(194, 135, 15, 0.25)" }} />
+      : isPending
+        ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-border-secondary)", display: "inline-block" }} />
+        : result
+          ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: CLS_CONFIG[result.classification]?.dot || "#888", display: "inline-block" }} />
+          : null;
 
   return (
     <div style={{
@@ -102,7 +243,7 @@ function StepCard({ stepKey, result, isRunning, isPending }) {
       overflow: "hidden",
       marginBottom: 8,
       background: "var(--color-background-primary)",
-      opacity: isPending ? 0.5 : 1,
+      opacity: isPending && !isReviewing ? 0.5 : 1,
       transition: "opacity 0.3s",
     }}>
       <div
@@ -130,98 +271,11 @@ function StepCard({ stepKey, result, isRunning, isPending }) {
       </div>
 
       {open && result && (
-        <div style={{ borderTop: "0.5px solid var(--color-border-tertiary)", padding: 14, background: "var(--color-background-primary)" }}>
-          {result.summary && (
-            <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, margin: "0 0 12px" }}>
-              {result.summary}
-            </p>
-          )}
-          {result.reasoning && (
-            <>
-              <p style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)", margin: "0 0 6px" }}>
-                Reasoning
-              </p>
-              <p style={{ fontSize: 13, color: "var(--color-text-secondary)", lineHeight: 1.6, margin: "0 0 12px", whiteSpace: "pre-wrap" }}>
-                {typeof result.reasoning === "string"
-                  ? (() => {
-                    try {
-                      const parsed = JSON.parse(result.reasoning);
-                      return parsed.reason || result.reasoning;
-                    } catch { return result.reasoning; }
-                  })()
-                  : JSON.stringify(result.reasoning, null, 2)
-                }
-              </p>
-            </>
-          )}
-          {result.metadata?.warnings?.length > 0 && (
-            <div style={{ marginBottom: 10 }}>
-              {result.metadata.warnings.map((w, i) => (
-                <div key={i} style={{
-                  fontSize: 12, color: "#854F0B", background: "#FAEEDA",
-                  borderRadius: "var(--border-radius-md)", padding: "6px 10px", marginBottom: 4, lineHeight: 1.4,
-                }}>
-                  {w}
-                </div>
-              ))}
-            </div>
-          )}
-          {result.data_used && Object.keys(result.data_used).length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--color-text-tertiary)" }}>Data used</span>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setDataOpen(o => !o); }}
-                  style={{
-                    fontSize: 11,
-                    color: "var(--color-text-tertiary)",
-                    background: "var(--color-background-secondary)",
-                    border: "0.5px solid var(--color-border-tertiary)",
-                    borderRadius: "var(--border-radius-md)",
-                    padding: "3px 8px",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {dataOpen ? "Hide" : "Show"} sources
-                </button>
-              </div>
-              {dataOpen && (
-                <pre style={{
-                  background: "var(--color-background-secondary)",
-                  borderRadius: "var(--border-radius-md)",
-                  padding: "10px 12px",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--color-text-secondary)",
-                  overflowX: "auto",
-                  maxHeight: 280,
-                  lineHeight: 1.5,
-                  margin: 0,
-                }}>
-                  {JSON.stringify(result.data_used, null, 2)}
-                </pre>
-              )}
-            </div>
-          )}
-          {result.token_usage && Object.keys(result.token_usage).length > 0 && (
-            <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {Object.entries(result.token_usage).map(([model, usage]) => (
-                <span key={model} style={{
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary)",
-                  background: "var(--color-background-secondary)",
-                  border: "0.5px solid var(--color-border-tertiary)",
-                  borderRadius: "var(--border-radius-md)",
-                  padding: "3px 8px",
-                  fontFamily: "var(--font-mono)",
-                }}>
-                  {model}: {(usage.total_tokens || 0).toLocaleString()} tokens
-                </span>
-              ))}
-            </div>
-          )}
+        <div
+          style={{ borderTop: "0.5px solid var(--color-border-tertiary)", padding: 14, background: "var(--color-background-primary)" }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <StepResultDetail result={result} />
         </div>
       )}
     </div>
@@ -502,7 +556,7 @@ export default function App() {
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [verbose, setVerbose] = useState(false);
 
-  const [phase, setPhase] = useState("idle"); // idle | running | done | error
+  const [phase, setPhase] = useState("idle"); // idle | running | reviewing | done | error
   const [stepStatuses, setStepStatuses] = useState({});
   const [stepResults, setStepResults] = useState({});
   const [currentStep, setCurrentStep] = useState(null);
@@ -511,7 +565,13 @@ export default function App() {
   const [error, setError] = useState(null);
   const [log, setLog] = useState([]);
 
+  const [reviewUI, setReviewUI] = useState(null);
+  const [reviewEdits, setReviewEdits] = useState({ summary: "", reasoning: "", classification: "" });
+  const [approveBusy, setApproveBusy] = useState(false);
+  const [approveError, setApproveError] = useState(null);
+
   const abortRef = useRef(null);
+  const approvalDeferredRef = useRef(null);
   const reportEndRef = useRef(null);
 
   const addLog = (msg) => setLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
@@ -544,7 +604,7 @@ export default function App() {
 
         setCurrentStep(step);
         setStepStatuses(prev => ({ ...prev, [step]: "running" }));
-        addLog(`Running step: ${STEP_LABELS[step]}`);
+        addLog(`Running step: ${STEP_LABELS[step] ?? step}`);
 
         const body = {
           hgvs,
@@ -557,7 +617,7 @@ export default function App() {
 
         const res = await fetch(`${API_BASE}/assessment/steps/${step}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
           body: JSON.stringify(body),
           signal: controller.signal,
         });
@@ -570,12 +630,57 @@ export default function App() {
         const data = await res.json();
         ctx = data.context;
         const result = data.step_result;
-        allStepResults[step] = result;
-
         setStepResults(prev => ({ ...prev, [step]: result }));
+        setStepStatuses(prev => ({ ...prev, [step]: "reviewing" }));
+        addLog(`Review: ${STEP_LABELS[step] ?? step} — edit if needed, then approve to continue.`);
+
+        const reasoningStr =
+          typeof result.reasoning === "string"
+            ? result.reasoning
+            : JSON.stringify(result.reasoning ?? "", null, 2);
+
+        setReviewEdits({
+          summary: result.summary ?? "",
+          reasoning: reasoningStr,
+          classification: result.classification ?? "unable_to_assess",
+        });
+        setApproveError(null);
+
+        let approvedPayload;
+        let abortedReview = false;
+        try {
+          approvedPayload = await new Promise((resolve, reject) => {
+            approvalDeferredRef.current = { resolve, reject };
+            setReviewUI({
+              step,
+              context: data.context,
+              stepResult: result,
+            });
+            setPhase("reviewing");
+          });
+        } catch (revErr) {
+          if (revErr?.name === "AbortError") {
+            abortedReview = true;
+            addLog("Pipeline cancelled.");
+            setPhase("idle");
+            setCurrentStep(null);
+            return;
+          }
+          throw revErr;
+        } finally {
+          approvalDeferredRef.current = null;
+          setReviewUI(null);
+          if (!abortedReview) setPhase("running");
+        }
+
+        ctx = approvedPayload.context;
+        const finalized = approvedPayload.step_result;
+        allStepResults[step] = finalized;
+
+        setStepResults(prev => ({ ...prev, [step]: finalized }));
         setStepStatuses(prev => ({ ...prev, [step]: "done" }));
         setCompletedCount(i + 1);
-        addLog(`Completed: ${STEP_LABELS[step]} → ${result.classification}`);
+        addLog(`Approved: ${STEP_LABELS[step] ?? step} → ${finalized.classification}`);
       }
 
       if (!controller.signal.aborted) {
@@ -591,7 +696,7 @@ export default function App() {
 
         const finalRes = await fetch(`${API_BASE}/assessment/steps/final_report`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
           body: JSON.stringify(finalBody),
           signal: controller.signal,
         });
@@ -620,11 +725,68 @@ export default function App() {
     }
   }, [hgvs, useWebSearch, verbose]);
 
+  const commitReview = useCallback(async () => {
+    if (!reviewUI || !approvalDeferredRef.current) return;
+    setApproveBusy(true);
+    setApproveError(null);
+    try {
+      const stepResultPayload = {
+        ...reviewUI.stepResult,
+        summary: reviewEdits.summary,
+        reasoning: reviewEdits.reasoning,
+      };
+      if (STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step)) {
+        stepResultPayload.classification = reviewEdits.classification;
+      }
+      const res = await fetch(`${API_BASE}/assessment/steps/${reviewUI.step}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
+        body: JSON.stringify({
+          hgvs,
+          context: reviewUI.context,
+          step_result: stepResultPayload,
+          options: { use_web_search: useWebSearch, verbose },
+        }),
+        signal: abortRef.current?.signal,
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Approve failed (${res.status}): ${errText}`);
+      }
+      const data = await res.json();
+      approvalDeferredRef.current.resolve(data);
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      setApproveError(err.message);
+    } finally {
+      setApproveBusy(false);
+    }
+  }, [reviewUI, reviewEdits, hgvs, useWebSearch, verbose]);
+
   const cancel = () => {
     abortRef.current?.abort();
+    const def = approvalDeferredRef.current;
+    if (def?.reject) {
+      try {
+        def.reject(new DOMException("Aborted", "AbortError"));
+      } catch {
+        /* ignore */
+      }
+      approvalDeferredRef.current = null;
+    }
+    setReviewUI(null);
   };
 
   const reset = () => {
+    const def = approvalDeferredRef.current;
+    if (def?.reject) {
+      try {
+        def.reject(new DOMException("Aborted", "AbortError"));
+      } catch {
+        /* ignore */
+      }
+      approvalDeferredRef.current = null;
+    }
     setPhase("idle");
     setStepStatuses({});
     setStepResults({});
@@ -633,6 +795,8 @@ export default function App() {
     setFinalReport(null);
     setError(null);
     setLog([]);
+    setReviewUI(null);
+    setApproveError(null);
   };
 
   const downloadReport = () => {
@@ -646,7 +810,19 @@ export default function App() {
   };
 
   const isRunning = phase === "running";
+  const isReviewing = phase === "reviewing";
+  const showPipeline = isRunning || isReviewing;
   const isDone = phase === "done";
+
+  const CLASSIFICATION_SELECT_ORDER = [
+    "eligible",
+    "likely_eligible",
+    "unlikely_eligible",
+    "not_eligible",
+    "unable_to_assess",
+    "not_applicable",
+    "applicable",
+  ];
 
   return (
     <>
@@ -818,8 +994,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Running state */}
-        {isRunning && (
+        {/* Pipeline in progress */}
+        {showPipeline && (
           <div style={{
             background: "var(--color-background-primary)",
             border: "0.5px solid var(--color-border-tertiary)",
@@ -830,9 +1006,11 @@ export default function App() {
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Spinner size={15} />
+                {!isReviewing && (
+                  <Spinner size={15} />
+                )}
                 <span style={{ fontSize: 14, fontWeight: 500, color: "var(--color-text-primary)" }}>
-                  Running pipeline
+                  {isReviewing ? "Review step output" : "Running pipeline"}
                 </span>
               </div>
               <button
@@ -858,10 +1036,15 @@ export default function App() {
             </div>
 
             <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
-              {completedCount}/{STEP_ORDER.length} steps complete
-              {currentStep && currentStep !== "final_report" && (
+              {completedCount}/{STEP_ORDER.length} steps approved
+              {isReviewing && currentStep && (
                 <span style={{ color: "var(--color-text-tertiary)" }}>
-                  {" "}· {STEP_LABELS[currentStep]}
+                  {" "}· Awaiting approval: {STEP_LABELS[currentStep] ?? currentStep}
+                </span>
+              )}
+              {!isReviewing && currentStep && currentStep !== "final_report" && (
+                <span style={{ color: "var(--color-text-tertiary)" }}>
+                  {" "}· {STEP_LABELS[currentStep] ?? currentStep}
                   <span style={{ animation: "pulse 1.2s ease-in-out infinite", display: "inline-block", marginLeft: 4 }}>…</span>
                 </span>
               )}
@@ -873,26 +1056,160 @@ export default function App() {
               )}
             </div>
 
+            {isReviewing && reviewUI && (
+              <div style={{
+                marginBottom: 16,
+                padding: 14,
+                background: "var(--color-background-secondary)",
+                border: "0.5px solid var(--color-border-secondary)",
+                borderRadius: "var(--border-radius-md)",
+              }}>
+                <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                  Edit the fields below, then approve to continue. Structured fields in reasoning (JSON) inform later steps when valid. Use data sources as reference.
+                </p>
+
+                {STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step) && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
+                      Classification
+                    </label>
+                    <select
+                      value={reviewEdits.classification}
+                      onChange={e => setReviewEdits(prev => ({ ...prev, classification: e.target.value }))}
+                      style={{
+                        width: "100%",
+                        maxWidth: 360,
+                        padding: "8px 10px",
+                        fontSize: 13,
+                        border: "0.5px solid var(--color-border-secondary)",
+                        borderRadius: "var(--border-radius-md)",
+                        background: "var(--color-background-primary)",
+                        color: "var(--color-text-primary)",
+                      }}
+                    >
+                      {CLASSIFICATION_SELECT_ORDER.map((c) => (
+                        <option key={c} value={c}>
+                          {CLS_CONFIG[c]?.label ?? c.replace(/_/g, " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
+                    Summary
+                  </label>
+                  <textarea
+                    value={reviewEdits.summary}
+                    onChange={e => setReviewEdits(prev => ({ ...prev, summary: e.target.value }))}
+                    rows={3}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "8px 10px",
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      border: "0.5px solid var(--color-border-secondary)",
+                      borderRadius: "var(--border-radius-md)",
+                      background: "var(--color-background-primary)",
+                      color: "var(--color-text-primary)",
+                      resize: "vertical",
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
+                    Reasoning
+                  </label>
+                  <textarea
+                    value={reviewEdits.reasoning}
+                    onChange={e => setReviewEdits(prev => ({ ...prev, reasoning: e.target.value }))}
+                    rows={10}
+                    style={{
+                      width: "100%",
+                      boxSizing: "border-box",
+                      padding: "8px 10px",
+                      fontSize: 12,
+                      lineHeight: 1.45,
+                      fontFamily: "var(--font-mono)",
+                      border: "0.5px solid var(--color-border-secondary)",
+                      borderRadius: "var(--border-radius-md)",
+                      background: "var(--color-background-primary)",
+                      color: "var(--color-text-primary)",
+                      resize: "vertical",
+                    }}
+                  />
+                </div>
+
+                {reviewUI.stepResult.data_used && Object.keys(reviewUI.stepResult.data_used).length > 0 && (
+                  <div style={{
+                    padding: 14,
+                    background: "var(--color-background-primary)",
+                    border: "0.5px solid var(--color-border-tertiary)",
+                    borderRadius: "var(--border-radius-md)",
+                    marginBottom: 12,
+                  }}>
+                    <StepResultDataUsed dataUsed={reviewUI.stepResult.data_used} defaultOpen />
+                  </div>
+                )}
+
+                {approveError && (
+                  <div style={{
+                    background: "#FCEBEB",
+                    color: "#A32D2D",
+                    borderRadius: "var(--border-radius-md)",
+                    padding: "8px 10px",
+                    fontSize: 12,
+                    marginBottom: 12,
+                    lineHeight: 1.5,
+                  }}>
+                    {approveError}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={commitReview}
+                  disabled={approveBusy}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "var(--border-radius-md)",
+                    background: "#0F6E56",
+                    color: "#fff",
+                    border: "none",
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: approveBusy ? "wait" : "pointer",
+                    opacity: approveBusy ? 0.7 : 1,
+                  }}
+                >
+                  {approveBusy ? "Saving…" : "Approve and continue"}
+                </button>
+              </div>
+            )}
+
             <div>
               {STEP_ORDER.map((step) => {
                 const result = stepResults[step];
-                const isActive = currentStep === step;
-                const isPendingStep = !stepStatuses[step];
+                const st = stepStatuses[step];
+                const isStepRunning = st === "running" && currentStep === step;
+                const isReviewingStep = st === "reviewing";
+                const isPendingStep = !st;
 
                 return (
                   <StepCard
                     key={step}
                     stepKey={step}
                     result={result}
-                    isRunning={isActive}
-                    isPending={isPendingStep && !isActive}
+                    isRunning={isStepRunning}
+                    isPending={isPendingStep && !isStepRunning && !isReviewingStep}
+                    isReviewing={isReviewingStep}
                   />
                 );
               })}
             </div>
 
             {/* Log */}
-            <div style={{
+            {/* <div style={{
               marginTop: 12,
               background: "var(--color-background-secondary)",
               borderRadius: "var(--border-radius-md)",
@@ -905,7 +1222,7 @@ export default function App() {
               lineHeight: 1.5,
             }}>
               {log.map((l, i) => <div key={i}>{l}</div>)}
-            </div>
+            </div> */}
           </div>
         )}
 

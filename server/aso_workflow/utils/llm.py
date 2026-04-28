@@ -33,7 +33,7 @@ from aso_workflow.prompts import SYSTEM_PROMPTS
 
 # ── Constants ────────────────────────────────────────────────────────────────
 DEFAULT_MODEL = "gemini/gemini-3.1-flash-lite-preview"
-HELPER_MODEL =  "gpt-5-nano" # "gemini/gemma-3-27b-it"
+HELPER_MODEL = "gemini/gemini-3.1-flash-lite-preview" #"gpt-5-nano"
 MAX_RAW_CONTENT_CHARS = 80_000
 MAX_TOOL_CALLS = 6
 

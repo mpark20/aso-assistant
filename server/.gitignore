@@ -2,6 +2,8 @@
 *.csv
 *.svg
 *.html
+*.log
+*.pid
 
 .env
 .DS_Store

@@ -1493,6 +1493,152 @@ Do not change the classification labels in the step results.
             model_name=self.model_name,
         )
     
+    def merge_step_result(
+        self,
+        step_name: str,
+        result: StepResult,
+        context: AssessmentContext,
+    ) -> StepResult:
+        """
+        Merge a user-approved (possibly edited) StepResult into the live context.
+
+        Downstream steps receive the returned context. Structured fields are taken
+        from the step JSON in ``reasoning`` when parseable, otherwise from
+        ``metadata``, matching normal step execution where possible.
+        """
+        if result.step_name != step_name:
+            raise ValueError(
+                f"step_name {step_name!r} does not match result.step_name {result.step_name!r}"
+            )
+
+        md = dict(result.metadata or {})
+        md["user_revised"] = True
+        result = StepResult(
+            step_name=result.step_name,
+            classification=result.classification,
+            summary=result.summary,
+            reasoning=result.reasoning,
+            data_used=result.data_used,
+            metadata=md,
+            error=result.error,
+            token_usage=result.token_usage,
+        )
+
+        parsed: Optional[dict[str, Any]] = None
+        if result.reasoning and isinstance(result.reasoning, str):
+            try:
+                parsed = json.loads(result.reasoning)
+            except (json.JSONDecodeError, TypeError):
+                parsed = None
+        if parsed is not None and not isinstance(parsed, dict):
+            parsed = None
+
+        if step_name == "variant_check":
+            if parsed and "_parse_error" not in parsed:
+                norm = parsed.get("hgvs_normalized")
+                if norm:
+                    context.hgvs_normalized = norm
+                gid = parsed.get("gene_id")
+                if gid:
+                    context.gene_id = gid
+                context.variant_valid = parsed.get("variant_valid", context.variant_valid)
+                context.is_cnv_gain = parsed.get("is_cnv_gain", False)
+                context.is_cnv_loss = parsed.get("is_cnv_loss", False)
+                mut = context.raw_cache.get("mutalyzer") or {}
+                if mut:
+                    context.intronic_or_exonic = (
+                        "intronic" if mut.get("intronic") else "exonic"
+                    )
+                    context.refseq_id = mut.get("refseq_id") or context.refseq_id
+            else:
+                if md.get("hgvs_normalized"):
+                    context.hgvs_normalized = md["hgvs_normalized"]
+                if md.get("gene_id"):
+                    context.gene_id = md["gene_id"]
+                context.is_cnv_gain = md.get("is_cnv_gain", context.is_cnv_gain or False)
+                context.is_cnv_loss = md.get("is_cnv_loss", context.is_cnv_loss or False)
+
+        elif step_name == "aso_check":
+            existing_aso_found = md.get("aso_evidence_found")
+            if existing_aso_found is None and parsed:
+                existing_aso_found = parsed.get("aso_evidence_found", False)
+            if existing_aso_found is None:
+                existing_aso_found = bool(md.get("evidence_snippets"))
+
+            approach = md.get("approach_used") or (
+                parsed.get("approach_used", "unknown") if parsed else "unknown"
+            )
+            ev_cls = md.get("evidence_classification") or (
+                parsed.get("evidence_classification", "unknown") if parsed else "unknown"
+            )
+            aso_success = md.get("aso_success")
+            if aso_success is None and parsed is not None:
+                aso_success = parsed.get("aso_success", False)
+
+            try:
+                context.existing_aso_type = (
+                    approach if existing_aso_found else "not_applicable"
+                )
+                context.existing_aso_success = bool(
+                    existing_aso_found and aso_success
+                )
+                context.existing_aso_sufficient = context.existing_aso_success and (
+                    ev_cls == "sufficient_functional_evidence"
+                )
+            except Exception:
+                context.existing_aso_type = "not_applicable"
+
+        elif step_name == "inheritance_pattern":
+            pattern_str = md.get("inheritance_pattern")
+            if pattern_str is None and parsed:
+                pattern_str = parsed.get("inheritance_pattern", "unknown")
+            if pattern_str:
+                try:
+                    context.inheritance_pattern = InheritancePattern(pattern_str)
+                except ValueError:
+                    context.inheritance_pattern = InheritancePattern.UNKNOWN
+            conf = md.get("confidence")
+            if conf is None and parsed:
+                conf = parsed.get("confidence", "low")
+            if conf is not None:
+                context.inheritance_confidence = conf
+
+        elif step_name == "pathomechanism":
+            pmech_str = md.get("pathomechanism")
+            if pmech_str is None and parsed:
+                pmech_str = parsed.get("pathomechanism", "unknown")
+            if pmech_str:
+                try:
+                    context.pathomechanism = Pathomechanism(pmech_str)
+                except ValueError:
+                    context.pathomechanism = Pathomechanism.UNKNOWN
+            if md.get("is_haploinsufficient") is not None:
+                context.is_haploinsufficient = md["is_haploinsufficient"]
+            elif parsed is not None and "is_haploinsufficient" in parsed:
+                context.is_haploinsufficient = parsed.get("is_haploinsufficient")
+            haplo = md.get("haploinsufficiency_evidence")
+            if haplo is None and parsed:
+                haplo = parsed.get("haploinsufficiency_conclusion")
+            if haplo:
+                context.haploinsufficiency_evidence = haplo
+
+        elif step_name == "splicing_effects":
+            src = parsed if parsed and "_parse_error" not in parsed else md
+            if src:
+                if src.get("has_splicing_evidence") is not None:
+                    context.has_splicing_evidence = src.get("has_splicing_evidence")
+                if src.get("splicing_effect_type") is not None:
+                    context.splicing_effect_type = src.get("splicing_effect_type")
+                if src.get("canonical_splicing_destroyed") is not None:
+                    context.canonical_splicing_destroyed = src.get(
+                        "canonical_splicing_destroyed"
+                    )
+
+        # Section steps do not currently mutate AssessmentContext beyond raw_cache
+        # filled during their own execution; nothing to sync here.
+
+        return result
+    
     # ─────────────────────────────────────────────────────────────
     # Internal helpers
     # ─────────────────────────────────────────────────────────────
