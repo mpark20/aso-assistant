@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from "react";
 
 // const API_BASE = "http://localhost:8080";
-const API_BASE = "https://snugly-shining-dreadful.ngrok-free.dev"
+// const API_BASE = "https://snugly-shining-dreadful.ngrok-free.dev"
+const API_BASE = "https://aso-assistant.onrender.com"
 
 const STEP_ORDER = [
   "variant_check",
