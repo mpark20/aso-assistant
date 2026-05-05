@@ -1,8 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 
 // const API_BASE = "http://localhost:8080";
-// const API_BASE = "https://snugly-shining-dreadful.ngrok-free.dev"
-const API_BASE = "https://aso-assistant.onrender.com"
+const API_BASE = "https://aso-assistant-production.up.railway.app"
 
 const STEP_ORDER = [
   "variant_check",
@@ -618,7 +617,7 @@ export default function App() {
 
         const res = await fetch(`${API_BASE}/assessment/steps/${step}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
           signal: controller.signal,
         });
@@ -697,7 +696,7 @@ export default function App() {
 
         const finalRes = await fetch(`${API_BASE}/assessment/steps/final_report`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(finalBody),
           signal: controller.signal,
         });
@@ -741,7 +740,7 @@ export default function App() {
       }
       const res = await fetch(`${API_BASE}/assessment/steps/${reviewUI.step}/approve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "ngrok-skip-browser-warning": "69420", },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           hgvs,
           context: reviewUI.context,
