@@ -10,11 +10,13 @@ The workflow is designed to combine structured biomedical data sources with LLM-
 This app allows users to input a genetic variant in HGVS format (e.g. `NM_000350.3(ABCA4):c.2626C>T`),
 and outputs a report noting it's eligibility for splice correction, exon skipping, transcript knockdown, and wildtype upregulation ASO therapeutic strategies. The user is guided through the N1C VARIANT protocol step by step, and provided with links to resources used throughout the process.
 
-## I. Agent Architecture
+## I. LLM Agent Setup
 
 At each step, the LLM is given a step-specific system prompt (`server/aso_workflow/prompts.py`). Data from external resources specific to that step (See Section II) is fetched and appended to the prompt, along with the normalized variant name.
 
 In the LLM's response, it has the option to either (1) answer immediately or (2) dive deeper into something mentioned in the initial prompt (e.g. a PubMed title, MIM number, Google search result preview). In the case of (2), the LLM can send the PMID/MIM/URL along with a set of questions of interest to a specialized literature review agent, which fetches the full paper/webpage text and attempts to answer the questions (if possible). The summarized results are returned to the main model, and the process can be repeated up to 6 times. Full implementation is in `llm.py`.
+
+NOTE: This pipeline does NOT rely on inherent LLM knowledge about the variant of interest (we use genetic databases directly, as described in Section II and III). Rather, the LLM's main responsibility is to interpret papers, summarize information across sources, and apply logic from the guidelines.
 
 
 ## II. Protocol Pipeline
@@ -30,7 +32,7 @@ Sources used: Mutalyzer
 
 ### Background: ASO Literature Check
 Sources used: PubMed search, ClinVar
-- Looks for existing ASO-related studies at variant, exon, and gene level using PubMed search and citations in ClinVar RCV comments
+- Looks for existing ASO-related studies at variant, exon, and gene level using PubMed search and citations in ClinVar RCV comments. Synonyms of the variant listed in ClinVar/Mutalyzer are added to the PubMed query to expand coverage.
 - Fetches full papers (or abstracts if unavailable) for titles that are deemed relevant for deeper analysis of findings
 - Determines whether prior evidence may already support a specific strategy
 
@@ -145,8 +147,12 @@ Supplemental alternative splicing references for Section C of the N1C VARIANT pr
 
 ### Protein/Domain and Alternative Splicing Context
 
-- **UniProt & InterPro** (`https://rest.uniprot.org`, `https://www.ebi.ac.uk/interpro/api`)  
-  Protein/domain context used in exon skipping assessment.
+- **UniProt** (`https://rest.uniprot.org`)  
+  Protein context used in exon skipping assessment. Specifically, we query by Refseq ID to identify the corresponding protein product.
+
+- **InterPro** (`https://www.ebi.ac.uk/interpro/api`)
+  Used for the identification of overlapping protein domain locations and their functions. We use InterPro because it conveniently links UniProt entries with a variety of other protein domain databases (e.g. PANTHER, Pfam).
+
 
 
 
