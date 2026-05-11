@@ -143,6 +143,12 @@ def call_llm(
             if tool_call is not None:
                 msg.tool_calls = [tool_call]
 
+        tool_limit_reply = (
+            f"[System: tool call limit ({max_tool_calls}) reached. "
+            "Please produce your final JSON response now using the "
+            "information gathered so far.]"
+        )
+
         # Tool-use loop
         while (tools and hasattr(msg, "tool_calls") and msg.tool_calls and tool_calls_made < max_tool_calls):
             # Add the assistant's tool call to the conversation history
@@ -162,9 +168,22 @@ def call_llm(
                 ],
             })
 
-            # Execute the tool calls, adding results to the conversation history
+            # Execute the tool calls, adding results to the conversation history.
+            # Anthropic requires a tool_result for every tool_use in the assistant turn.
+            # When max_tool_calls is hit mid-batch (parallel tool calls), we must still
+            # emit tool-role results for the remaining ids — never interleave a user
+            # message before all tool results are present.
             tool_results = []
-            for tc in msg.tool_calls:
+            for idx, tc in enumerate(msg.tool_calls):
+                if tool_calls_made >= max_tool_calls:
+                    for tc_rem in msg.tool_calls[idx:]:
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tc_rem.id,
+                            "content": tool_limit_reply,
+                        })
+                    break
+
                 tool_calls_made += 1
                 try:
                     args = tc.function.arguments
@@ -182,14 +201,12 @@ def call_llm(
                 tool_results.append({"role": "tool", "tool_call_id": tc.id, "content": result_str})
 
                 if tool_calls_made >= max_tool_calls:
-                    tool_results.append({
-                        "role": "user",
-                        "content": (
-                            f"[System: tool call limit ({max_tool_calls}) reached. "
-                            "Please produce your final JSON response now using the "
-                            "information gathered so far.]"
-                        ),
-                    })
+                    for tc_rem in msg.tool_calls[idx + 1 :]:
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tc_rem.id,
+                            "content": tool_limit_reply,
+                        })
                     break
 
             messages.extend(tool_results)
@@ -200,6 +217,47 @@ def call_llm(
             _accumulate_usage(usage_acc, model, response)
             msg = response.choices[0].message
 
+        # Budget exhausted but the model asked for more tools: close the turn with
+        # tool results so the transcript stays Anthropic-valid, then get a final reply.
+        if (
+            tools
+            and hasattr(msg, "tool_calls")
+            and msg.tool_calls
+            and tool_calls_made >= max_tool_calls
+        ):
+            messages.append({
+                "role": "assistant",
+                "content": msg.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
+            messages.extend(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": tool_limit_reply,
+                }
+                for tc in msg.tool_calls
+            )
+            call_kwargs["messages"] = messages
+            response, res_text_or_json = _completion_with_litellm(
+                max_retries=max_retries, expect_json=expect_json, **call_kwargs
+            )
+            _accumulate_usage(usage_acc, model, response)
+            msg = response.choices[0].message
+            if msg.content and "<tool_call>" in msg.content and msg.tool_calls is None:
+                tool_call = _custom_parse_tool_call(msg.content)
+                if tool_call is not None:
+                    msg.tool_calls = [tool_call]
 
     if not expect_json:
         res_text = res_text_or_json
