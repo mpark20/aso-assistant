@@ -164,7 +164,11 @@ function StepResultDataUsed({ dataUsed, defaultOpen = false }) {
 function StepResultDetail({ result, defaultDataOpen = false }) {
   if (!result) return null;
 
+  // only show reasoning if it's not the same as the summary
   const reasoningText = formatReasoningDisplay(result.reasoning);
+  const summaryStr = result.summary == null ? "" : String(result.summary);
+  const showReasoning =
+    reasoningText !== "" && reasoningText !== summaryStr;
 
   return (
     <>
@@ -173,7 +177,7 @@ function StepResultDetail({ result, defaultDataOpen = false }) {
           {result.summary}
         </p>
       )}
-      {result.reasoning && (
+      {showReasoning && (
         <>
           <p style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-tertiary)", margin: "0 0 6px" }}>
             Reasoning
@@ -1148,7 +1152,15 @@ export default function App() {
               )}
             </div>
 
-            {isReviewing && reviewUI && (
+
+            {/* User editing screen */}
+            {isReviewing && reviewUI && (() => {
+              const reasoningDisplayReview = formatReasoningDisplay(reviewEdits.reasoning);
+              const summaryReview = String(reviewEdits.summary ?? "");
+              const showReasoningEditor =
+                reasoningDisplayReview !== summaryReview
+                || reviewEdits.reasoning !== reasoningDisplayReview;
+              return (
               <div style={{
                 marginBottom: 16,
                 padding: 14,
@@ -1159,6 +1171,19 @@ export default function App() {
                 <p style={{ fontSize: 12, color: "var(--color-text-tertiary)", margin: "0 0 14px", lineHeight: 1.5 }}>
                   Edit the fields below, then approve to continue. Structured fields in reasoning (JSON) inform later steps when valid. Use data sources as reference.
                 </p>
+
+                {reviewUI.stepResult.metadata?.warnings?.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    {reviewUI.stepResult.metadata.warnings.map((w, i) => (
+                      <div key={i} style={{
+                        fontSize: 12, color: "#854F0B", background: "#FAEEDA",
+                        borderRadius: "var(--border-radius-md)", padding: "6px 10px", marginBottom: 4, lineHeight: 1.4,
+                      }}>
+                        {w}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step) && (
                   <div style={{ marginBottom: 12 }}>
@@ -1209,29 +1234,31 @@ export default function App() {
                     }}
                   />
                 </div>
-                <div style={{ marginBottom: 12 }}>
-                  <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
-                    Reasoning
-                  </label>
-                  <textarea
-                    value={reviewEdits.reasoning}
-                    onChange={e => setReviewEdits(prev => ({ ...prev, reasoning: e.target.value }))}
-                    rows={10}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "8px 10px",
-                      fontSize: 12,
-                      lineHeight: 1.45,
-                      fontFamily: "var(--font-mono)",
-                      border: "0.5px solid var(--color-border-secondary)",
-                      borderRadius: "var(--border-radius-md)",
-                      background: "var(--color-background-primary)",
-                      color: "var(--color-text-primary)",
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
+                {showReasoningEditor && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
+                      Reasoning
+                    </label>
+                    <textarea
+                      value={reviewEdits.reasoning}
+                      onChange={e => setReviewEdits(prev => ({ ...prev, reasoning: e.target.value }))}
+                      rows={10}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        padding: "8px 10px",
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        fontFamily: "var(--font-mono)",
+                        border: "0.5px solid var(--color-border-secondary)",
+                        borderRadius: "var(--border-radius-md)",
+                        background: "var(--color-background-primary)",
+                        color: "var(--color-text-primary)",
+                        resize: "vertical",
+                      }}
+                    />
+                  </div>
+                )}
 
                 {reviewUI.stepResult.data_used && Object.keys(reviewUI.stepResult.data_used).length > 0 && (
                   <div style={{
@@ -1277,7 +1304,8 @@ export default function App() {
                   {approveBusy ? "Saving…" : "Approve and continue"}
                 </button>
               </div>
-            )}
+              );
+            })()}
 
             <div>
               {(activeStepOrder.length > 0 ? activeStepOrder : STEP_ORDER).map((step) => {
