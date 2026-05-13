@@ -632,6 +632,48 @@ export default function App() {
         ctx = data.context;
         const result = data.step_result;
         setStepResults(prev => ({ ...prev, [step]: result }));
+
+        if (step === "variant_check") {
+          const variantCheckCls = String(result.classification ?? "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "_")
+            .replace(/-/g, "_");
+
+          if (data.context?.variant_valid === false) {
+            setStepStatuses((prev) => ({ ...prev, [step]: "done" }));
+            const detail = (result.summary || "").trim();
+            setError(
+              "This variant did not pass Step 0 validation, so the assessment cannot continue. " +
+                "Correct your reference sequence and HGVS notation, then run the assessment again." +
+                (detail ? ` ${detail}` : ""),
+            );
+            setPhase("error");
+            setCurrentStep(null);
+            addLog(
+              `Stopped: invalid variant — ${detail || "update HGVS and restart."}`,
+            );
+            return false;
+          }
+
+          if (variantCheckCls === "unable_to_assess") {
+            setStepStatuses((prev) => ({ ...prev, [step]: "done" }));
+            const detail = (result.summary || "").trim();
+            setError(
+              "Step 0 classifies this variant as unable to assess under the N1C VARIANT guidelines " +
+                "(not applicable or excluded), so the pipeline stops here. " +
+                "Use a variant that falls within the guideline scope, or start a new assessment after reviewing the rationale." +
+                (detail ? ` ${detail}` : ""),
+            );
+            setPhase("error");
+            setCurrentStep(null);
+            addLog(
+              `Stopped: unable to assess (Step 0) — ${detail || "see message above."}`,
+            );
+            return false;
+          }
+        }
+
         setStepStatuses(prev => ({ ...prev, [step]: "reviewing" }));
         addLog(`Review: ${STEP_LABELS[step] ?? step} — edit if needed, then approve to continue.`);
 
