@@ -1,18 +1,18 @@
 import { useState, useRef, useCallback } from "react";
 
-// const API_BASE = "http://localhost:8080";
-const API_BASE = "https://aso-assistant-production.up.railway.app"
+const API_BASE = "http://localhost:8080";
+// const API_BASE = "https://aso-assistant-production.up.railway.app"
 
-const STEP_ORDER = [
+/** Core steps through splicing; therapy sections are chosen after `/assessment/steps/routing`. */
+const PREFIX_STEPS = [
   "variant_check",
   "aso_check",
   "inheritance_pattern",
   "pathomechanism",
   "splicing_effects",
-  "exon_skipping",
-  "knockdown",
-  "wt_upregulation",
 ];
+const SECTION_STEPS = ["exon_skipping", "knockdown", "wt_upregulation"];
+const STEP_ORDER = [...PREFIX_STEPS, ...SECTION_STEPS];
 
 const STEP_LABELS = {
   variant_check: "Variant validation",
@@ -561,6 +561,8 @@ export default function App() {
   const [stepResults, setStepResults] = useState({});
   const [currentStep, setCurrentStep] = useState(null);
   const [completedCount, setCompletedCount] = useState(0);
+  /** Steps shown in the in-progress list; prefix first, then only sections returned by routing. */
+  const [activeStepOrder, setActiveStepOrder] = useState([]);
   const [finalReport, setFinalReport] = useState(null);
   const [error, setError] = useState(null);
   const [log, setLog] = useState([]);
@@ -584,6 +586,7 @@ export default function App() {
     setStepResults({});
     setCurrentStep(null);
     setCompletedCount(0);
+    setActiveStepOrder([...PREFIX_STEPS]);
     setFinalReport(null);
     setError(null);
     setLog([]);
@@ -597,10 +600,8 @@ export default function App() {
       let ctx = null;
       const allStepResults = {};
 
-      for (let i = 0; i < STEP_ORDER.length; i++) {
-        const step = STEP_ORDER[i];
-
-        if (controller.signal.aborted) break;
+      const runOneApprovedStep = async (step, doneIdx) => {
+        if (controller.signal.aborted) return false;
 
         setCurrentStep(step);
         setStepStatuses(prev => ({ ...prev, [step]: "running" }));
@@ -664,7 +665,7 @@ export default function App() {
             addLog("Pipeline cancelled.");
             setPhase("idle");
             setCurrentStep(null);
-            return;
+            return false;
           }
           throw revErr;
         } finally {
@@ -679,8 +680,53 @@ export default function App() {
 
         setStepResults(prev => ({ ...prev, [step]: finalized }));
         setStepStatuses(prev => ({ ...prev, [step]: "done" }));
-        setCompletedCount(i + 1);
+        setCompletedCount(doneIdx);
         addLog(`Approved: ${STEP_LABELS[step] ?? step} → ${finalized.classification}`);
+        return true;
+      };
+
+      // Run general steps
+      let doneIdx = 0;
+      for (const step of PREFIX_STEPS) {
+        const ok = await runOneApprovedStep(step, ++doneIdx);
+        if (!ok) return;
+        if (controller.signal.aborted) return;
+      }
+
+      // Route to therapeutic eligibility sections
+      const routeRes = await fetch(`${API_BASE}/assessment/steps/routing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hgvs,
+          context: ctx,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!routeRes.ok) {
+        const errText = await routeRes.text();
+        throw new Error(`Routing failed (${routeRes.status}): ${errText}`);
+      }
+
+      const routeData = await routeRes.json();
+      const sections = routeData.sections || {};
+      const sectionChain = SECTION_STEPS.filter((k) => sections[k]);
+
+      addLog(
+        sectionChain.length > 0
+          ? `Routing selected: ${sectionChain.map((k) => STEP_LABELS[k] ?? k).join(", ")}`
+          : "Routing: no therapy sections apply — only splice correction and upstream steps feed the final report.",
+      );
+      if (routeData.explanation) {
+        addLog(routeData.explanation);
+      }
+      setActiveStepOrder([...PREFIX_STEPS, ...sectionChain]);
+
+      for (const step of sectionChain) {
+        const ok = await runOneApprovedStep(step, ++doneIdx);
+        if (!ok) return;
+        if (controller.signal.aborted) return;
       }
 
       if (!controller.signal.aborted) {
@@ -792,6 +838,7 @@ export default function App() {
     setStepResults({});
     setCurrentStep(null);
     setCompletedCount(0);
+    setActiveStepOrder([]);
     setFinalReport(null);
     setError(null);
     setLog([]);
@@ -1032,11 +1079,14 @@ export default function App() {
             </div>
 
             <div style={{ marginBottom: 10 }}>
-              <ProgressBar current={completedCount} total={STEP_ORDER.length} />
+              <ProgressBar
+                current={completedCount}
+                total={activeStepOrder.length > 0 ? activeStepOrder.length : PREFIX_STEPS.length}
+              />
             </div>
 
             <div style={{ fontSize: 13, color: "var(--color-text-secondary)", marginBottom: 14, lineHeight: 1.5 }}>
-              {completedCount}/{STEP_ORDER.length} steps approved
+              {completedCount}/{activeStepOrder.length > 0 ? activeStepOrder.length : PREFIX_STEPS.length} steps approved
               {isReviewing && currentStep && (
                 <span style={{ color: "var(--color-text-tertiary)" }}>
                   {" "}· Awaiting approval: {STEP_LABELS[currentStep] ?? currentStep}
@@ -1188,7 +1238,7 @@ export default function App() {
             )}
 
             <div>
-              {STEP_ORDER.map((step) => {
+              {(activeStepOrder.length > 0 ? activeStepOrder : STEP_ORDER).map((step) => {
                 const result = stepResults[step];
                 const st = stepStatuses[step];
                 const isStepRunning = st === "running" && currentStep === step;
