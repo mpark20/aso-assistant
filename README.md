@@ -7,7 +7,7 @@ The workflow is designed to combine structured biomedical data sources with LLM-
 
 ## Overview
 
-This app allows users to input a genetic variant in HGVS format (e.g. `NM_000350.3(ABCA4):c.2626C>T`),
+This app allows users to input a genetic variant in HGVS format (e.g. `NM_000350.3:c.2626C>T`),
 and outputs a report noting it's eligibility for splice correction, exon skipping, transcript knockdown, and wildtype upregulation ASO therapeutic strategies. The user is guided through the N1C VARIANT protocol step by step, and provided with links to resources used throughout the process.
 
 ## I. LLM Agent Setup
@@ -81,7 +81,7 @@ This step primarily relies on the variant's pathomechanism, haploinsufficiency, 
 
 
 ### Wildtype Upregulation
-Sources: PubMed search, Ensembl VEP (with RiboseqORFs and UTRAnnotator plugins), Lim et al. (2020), Mittal et al. (2022), Felker et al. (2023)
+Sources: PubMed search, Ensembl VEP (with UTRAnnotator plugins), Lim et al. (2020), Mittal et al. (2022), Felker et al. (2023)
 
 At this stage, we check if alternative splicing events have previously been identified in the variant. Specifically: 
 - Poison Exons (Lim et al., 2020; Felker et al., 2023; Mittal et al., 2022)
@@ -111,7 +111,7 @@ The workflow uses a mix of APIs, literature retrieval tools, and curated local r
   Variant normalization, HGVS correction, exon numbers (cDNA), intron offsets.
 
 - **Ensembl VEP REST API** (`https://rest.ensembl.org`)  
-  Variant consequence and transcript-level annotations. We use the API endpoint with the following plugins: DosageSensitivity, mane, numbers, canonical, RiboseqORFs, SpliceAI, MaveDB, domains, LOEUF, UTRAnnotator
+  Variant consequence and transcript-level annotations. We use the API endpoint with the following plugins: DosageSensitivity, mane, numbers, canonical, SpliceAI, MaveDB, domains, LOEUF, UTRAnnotator
 
 - **UCSC Genome Browser APIs** (`https://api.genome.ucsc.edu`)  
   Exon sequence, strands, and frames are taken from the `wgEncodeGencodeBasicV48` track endpoint, and sequences are from the `sequence` endpoint (the `revComp` flag is set for negative strands).

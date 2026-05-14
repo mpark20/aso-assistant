@@ -48,7 +48,8 @@ def load_variants(spreadsheet_path: Path, split="n1c_test_variants") -> pd.DataF
             f"Found columns: {list(df.columns)}"
         )
     
-    df = df.loc[df["source"] == split].reset_index()
+    if split is not None:
+        df = df.loc[df["source"] == split].reset_index()
 
     return df
 
@@ -149,7 +150,7 @@ def main(args) -> None:
     true_outcomes = []
     pred_outcomes = []
 
-    for idx, row in df.iterrows():
+    for idx, (_, row) in enumerate(df.iterrows()):
         hgvs = str(row['hgvs']).strip()
         source = str(row['source']).strip()
 
@@ -247,7 +248,10 @@ if __name__ == "__main__":
         "-n", "--num-examples",
         type=int, default=None, help="Number of examples to evaluate (default: all)"
     )
-    parser.add_argument("--hgvs", type=str, default=None, help="HGVS to evaluate (default: all)")
+    parser.add_argument(
+        "--hgvs",
+        type=str, default=None, help="HGVS to evaluate (default: all)"
+    )
     parser.add_argument(
         "--use-web-search",
         action="store_true",
