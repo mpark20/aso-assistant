@@ -74,6 +74,9 @@ class ASOAssessmentPipeline:
         "wt_upregulation": "assess_wt_upregulation",
     }
 
+    # Section A/B/C — only run when ``_route_to_sections`` selects them (unless ``run`` overrides via steps_to_run).
+    SECTION_STEP_NAMES = frozenset({"exon_skipping", "knockdown", "wt_upregulation"})
+
     def __init__(
         self,
         model_name: str | None = None,
@@ -253,6 +256,27 @@ class ASOAssessmentPipeline:
 
         if context is None:
             context = AssessmentContext(hgvs_input=hgvs)
+
+        if step_name in self.SECTION_STEP_NAMES:
+            routed = self._route_to_sections(context)
+            if not routed.get(step_name):
+                return StepResult(
+                    step_name=step_name,
+                    classification=EligibilityClassification.NOT_APPLICABLE,
+                    summary=(
+                        "Skipped: Step 4 routing does not call for this therapy "
+                        "given the current inheritance, pathomechanism, and variant context."
+                    ),
+                    reasoning=json.dumps(
+                        {
+                            "skipped_by_routing": True,
+                            "routing": routed,
+                        }
+                    ),
+                    data_used={},
+                    metadata={"skipped_by_routing": True, "routing": routed},
+                    token_usage={},
+                )
 
         method_name = self.STEP_MAP[step_name]
         return self._safe_run_step(method_name, hgvs, context)
