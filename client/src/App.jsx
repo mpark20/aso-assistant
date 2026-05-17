@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 
-const API_BASE = "http://localhost:8080";
-// const API_BASE = "https://aso-assistant-production.up.railway.app"
+// const API_BASE = "http://localhost:8080";
+const API_BASE = "https://aso-assistant-production.up.railway.app"
 
 /** Core steps through splicing; therapy sections are chosen after `/assessment/steps/routing`. */
 const PREFIX_STEPS = [
@@ -16,7 +16,7 @@ const STEP_ORDER = [...PREFIX_STEPS, ...SECTION_STEPS];
 
 const STEP_LABELS = {
   variant_check: "Variant validation",
-  aso_check: "Existing ASO / therapy check",
+  aso_check: "Existing ASO therapy check",
   inheritance_pattern: "Inheritance pattern",
   pathomechanism: "Pathomechanism",
   splicing_effects: "Splicing effects",
@@ -33,6 +33,47 @@ const STEPS_WITH_CLASSIFICATION_EDITOR = new Set([
   "knockdown",
   "wt_upregulation",
 ]);
+
+/** Steps that show eligibility badges in the pipeline step list (not variant validation). */
+const STEPS_WITH_ELIGIBILITY_LABEL = new Set([
+  "splicing_effects",
+  "exon_skipping",
+  "knockdown",
+  "wt_upregulation",
+]);
+
+const ELIGIBILITY_CLASSIFICATION_SELECT_ORDER = [
+  "eligible",
+  "likely_eligible",
+  "unlikely_eligible",
+  "not_eligible",
+  "unable_to_assess",
+  "not_applicable",
+  "applicable",
+];
+
+const VARIANT_CHECK_REVIEW_OPTIONS = ["valid", "invalid"];
+
+const VARIANT_CHECK_REVIEW_LABELS = {
+  valid: "Valid",
+  invalid: "Invalid",
+};
+
+/** Map Step 0 server classification (+ context) to review dropdown value. */
+function variantCheckToReviewClassification(result, context) {
+  if (context?.variant_valid === false) return "invalid";
+  const cls = String(result?.classification ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/-/g, "_");
+  return cls === "unable_to_assess" ? "invalid" : "valid";
+}
+
+/** Map review dropdown value to Step 0 server classification. */
+function variantCheckFromReviewClassification(reviewCls) {
+  return reviewCls === "invalid" ? "unable_to_assess" : "eligible";
+}
 
 const STRATEGY_LABELS = {
   splice_correction: "Splice correction",
@@ -229,6 +270,7 @@ function StepResultDetail({ result, defaultDataOpen = false }) {
 
 function StepCard({ stepKey, result, isRunning, isPending, isReviewing }) {
   const [open, setOpen] = useState(false);
+  const showEligibilityLabel = STEPS_WITH_ELIGIBILITY_LABEL.has(stepKey);
 
   const statusDot = isRunning
     ? <Spinner size={13} />
@@ -237,7 +279,15 @@ function StepCard({ stepKey, result, isRunning, isPending, isReviewing }) {
       : isPending
         ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--color-border-secondary)", display: "inline-block" }} />
         : result
-          ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: CLS_CONFIG[result.classification]?.dot || "#888", display: "inline-block" }} />
+          ? <span style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: showEligibilityLabel
+              ? (CLS_CONFIG[result.classification]?.dot || "#888")
+              : "var(--color-text-tertiary)",
+            display: "inline-block",
+          }} />
           : null;
 
   return (
@@ -268,7 +318,7 @@ function StepCard({ stepKey, result, isRunning, isPending, isReviewing }) {
         <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>
           {STEP_LABELS[stepKey]}
         </span>
-        {result && <Badge cls={result.classification} small />}
+        {result && showEligibilityLabel && <Badge cls={result.classification} small />}
         {result && (
           <span style={{ fontSize: 12, color: "var(--color-text-tertiary)", transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s", display: "inline-block" }}>▾</span>
         )}
@@ -689,7 +739,9 @@ export default function App() {
         setReviewEdits({
           summary: result.summary ?? "",
           reasoning: reasoningStr,
-          classification: result.classification ?? "unable_to_assess",
+          classification: step === "variant_check"
+            ? variantCheckToReviewClassification(result, data.context)
+            : (result.classification ?? "unable_to_assess"),
         });
         setApproveError(null);
 
@@ -728,6 +780,46 @@ export default function App() {
         setStepStatuses(prev => ({ ...prev, [step]: "done" }));
         setCompletedCount(doneIdx);
         addLog(`Approved: ${STEP_LABELS[step] ?? step} → ${finalized.classification}`);
+
+        if (step === "variant_check") {
+          const approvedCls = String(finalized.classification ?? "")
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, "_")
+            .replace(/-/g, "_");
+
+          if (ctx?.variant_valid === false) {
+            const detail = (finalized.summary || "").trim();
+            setError(
+              "This variant did not pass Step 0 validation, so the assessment cannot continue. " +
+                "Correct your reference sequence and HGVS notation, then run the assessment again." +
+                (detail ? ` ${detail}` : ""),
+            );
+            setPhase("error");
+            setCurrentStep(null);
+            addLog(
+              `Stopped: invalid variant — ${detail || "update HGVS and restart."}`,
+            );
+            return false;
+          }
+
+          if (approvedCls === "unable_to_assess") {
+            const detail = (finalized.summary || "").trim();
+            setError(
+              "Step 0 classifies this variant as unable to assess under the N1C VARIANT guidelines " +
+                "(not applicable or excluded), so the pipeline stops here. " +
+                "Use a variant that falls within the guideline scope, or start a new assessment after reviewing the rationale." +
+                (detail ? ` ${detail}` : ""),
+            );
+            setPhase("error");
+            setCurrentStep(null);
+            addLog(
+              `Stopped: unable to assess (Step 0) — ${detail || "see message above."}`,
+            );
+            return false;
+          }
+        }
+
         return true;
       };
 
@@ -828,7 +920,22 @@ export default function App() {
         reasoning: reviewEdits.reasoning,
       };
       if (STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step)) {
-        stepResultPayload.classification = reviewEdits.classification;
+        if (reviewUI.step === "variant_check") {
+          const isValid = reviewEdits.classification === "valid";
+          stepResultPayload.classification = variantCheckFromReviewClassification(reviewEdits.classification);
+          try {
+            const parsed = JSON.parse(stepResultPayload.reasoning);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              parsed.variant_valid = isValid;
+              parsed.classification = stepResultPayload.classification;
+              stepResultPayload.reasoning = JSON.stringify(parsed, null, 2);
+            }
+          } catch {
+            /* keep reasoning as edited */
+          }
+        } else {
+          stepResultPayload.classification = reviewEdits.classification;
+        }
       }
       const res = await fetch(`${API_BASE}/assessment/steps/${reviewUI.step}/approve`, {
         method: "POST",
@@ -907,15 +1014,9 @@ export default function App() {
   const showPipeline = isRunning || isReviewing;
   const isDone = phase === "done";
 
-  const CLASSIFICATION_SELECT_ORDER = [
-    "eligible",
-    "likely_eligible",
-    "unlikely_eligible",
-    "not_eligible",
-    "unable_to_assess",
-    "not_applicable",
-    "applicable",
-  ];
+  const classificationSelectOptions = reviewUI?.step === "variant_check"
+    ? VARIANT_CHECK_REVIEW_OPTIONS
+    : ELIGIBILITY_CLASSIFICATION_SELECT_ORDER;
 
   return (
     <>
@@ -1015,35 +1116,6 @@ export default function App() {
             }}>
               {hgvs}
             </div>
-
-            {/* <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
-              {[
-                { key: "useWebSearch", val: useWebSearch, set: setUseWebSearch, label: "Web search", desc: "Augment with live literature" },
-                { key: "verbose", val: verbose, set: setVerbose, label: "Verbose mode", desc: "Extended LLM reasoning" },
-              ].map(opt => (
-                <label key={opt.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                  <div
-                    onClick={() => opt.set(v => !v)}
-                    style={{
-                      width: 32, height: 18, borderRadius: 9,
-                      background: opt.val ? "#0F6E56" : "var(--color-border-secondary)",
-                      position: "relative", cursor: "pointer", flexShrink: 0,
-                      transition: "background 0.2s",
-                    }}
-                  >
-                    <div style={{
-                      position: "absolute", top: 2, left: opt.val ? 16 : 2,
-                      width: 14, height: 14, borderRadius: "50%", background: "white",
-                      transition: "left 0.2s",
-                    }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--color-text-primary)" }}>{opt.label}</div>
-                    <div style={{ fontSize: 11, color: "var(--color-text-tertiary)" }}>{opt.desc}</div>
-                  </div>
-                </label>
-              ))}
-            </div> */}
 
             {error && (
               <div style={{
@@ -1188,7 +1260,7 @@ export default function App() {
                 {STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step) && (
                   <div style={{ marginBottom: 12 }}>
                     <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
-                      Classification
+                      {reviewUI.step === "variant_check" ? "Variant status" : "Classification"}
                     </label>
                     <select
                       value={reviewEdits.classification}
@@ -1204,9 +1276,10 @@ export default function App() {
                         color: "var(--color-text-primary)",
                       }}
                     >
-                      {CLASSIFICATION_SELECT_ORDER.map((c) => (
+                      {classificationSelectOptions.map((c) => (
                         <option key={c} value={c}>
-                          {CLS_CONFIG[c]?.label ?? c.replace(/_/g, " ")}
+                          {reviewUI.step === "variant_check"
+                            ? c : (CLS_CONFIG[c]?.label ?? c.replace(/_/g, " "))}
                         </option>
                       ))}
                     </select>
