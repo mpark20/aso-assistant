@@ -38,6 +38,7 @@ from aso_workflow.utils.apis import (
     search_ensembl_vep,
     search_ncbi,
     search_alt_splicing_events,
+    search_splicevardb,
 )
 from aso_workflow.utils.llm import call_llm, FETCH_AND_EXTRACT_TOOL
 from aso_workflow.utils.tasks import fetch_protein_context, fetch_transcript_context, fetch_clinical_context
@@ -164,6 +165,10 @@ class ASOAssessmentPipeline:
 
             if result.classification == EligibilityClassification.UNABLE_TO_ASSESS:
                 self._log(f"  ⚠ Unable to assess pathomechanism: {result.summary}")
+            elif self._pathomechanism_is_unknown(context):
+                self._log("  ⚠ Pathomechanism unknown — stopping pipeline.")
+                if steps_to_run is None:
+                    return self._make_early_exit_report(hgvs, context, step_results, result)
             else:
                 self._log(f"  ✓ {result.summary}")
 
@@ -941,7 +946,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             sections["wt_upregulation"] = True
             return sections
 
-        if pathomech is None or pathomech == Pathomechanism.UNKNOWN or pathomech == Pathomechanism.COMPLEX:
+        if pathomech == Pathomechanism.COMPLEX:
             sections["exon_skipping"] = True
             sections["knockdown"] = True
             return sections
@@ -1693,6 +1698,9 @@ Do not change the classification labels in the step results.
             return True
         return step_name in steps_to_run
 
+    def _pathomechanism_is_unknown(self, context: AssessmentContext) -> bool:
+        return context.pathomechanism == Pathomechanism.UNKNOWN
+
     def _log(self, message: str) -> None:
         if self.verbose:
             print(message)
@@ -1716,6 +1724,8 @@ Do not change the classification labels in the step results.
             summary=f"Assessment stopped at {failing_result.step_name}: {failing_result.summary}",
             context=context,
             total_token_usage=_aggregate_token_usage(step_results),
+            date=datetime.now().strftime("%Y-%m-%d"),
+            model_name=self.model_name,
         )
 
 

@@ -391,7 +391,21 @@ async def assessment_final_report(body: FinalReportRequest) -> dict[str, Any]:
         raise HTTPException(
             status_code=400, detail=f"Invalid step_results payload: {e}"
         ) from e
-    report = pipeline.make_final_report(body.hgvs, ctx, step_results)
+    pathomechanism_result = step_results.get("pathomechanism")
+    if ctx.pathomechanism == Pathomechanism.UNKNOWN:
+        if pathomechanism_result is None:
+            pathomechanism_result = StepResult(
+                step_name="pathomechanism",
+                classification=EligibilityClassification.UNABLE_TO_ASSESS,
+                summary="Pathomechanism unknown.",
+                reasoning="",
+                data_used={},
+            )
+        report = pipeline._make_early_exit_report(
+            body.hgvs, ctx, step_results, pathomechanism_result
+        )
+    else:
+        report = pipeline.make_final_report(body.hgvs, ctx, step_results)
     #return PlainTextResponse(report_to_plain_text(report))
     return jsonable_encoder(report_to_json(report))
 

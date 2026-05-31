@@ -82,6 +82,12 @@ const STRATEGY_LABELS = {
   wt_upregulation: "WT upregulation",
 };
 
+function isUnknownPathomechanism(context, stepResult) {
+  const fromCtx = context?.pathomechanism;
+  const fromMeta = stepResult?.metadata?.pathomechanism;
+  return fromCtx === "unknown" || fromMeta === "unknown";
+}
+
 const CLS_CONFIG = {
   eligible: { label: "eligible", bg: "#E1F5EE", color: "#0F6E56", dot: "#0F6E56" },
   likely_eligible: { label: "likely eligible", bg: "#EAF3DE", color: "#3B6D11", dot: "#3B6D11" },
@@ -381,10 +387,20 @@ function FinalReport({ report, onDownload }) {
   const summaryText = typeof summaryRaw === "string" ? summaryRaw : null;
 
   const steps = report.step_results ?? report.steps ?? {};
-  const strategies =
+  const strategiesFromSummary =
     s?.strategy_assessments !== null && typeof s.strategy_assessments === "object"
       ? s.strategy_assessments
       : {};
+  const classifications = report.classifications ?? {};
+  const strategies =
+    Object.keys(strategiesFromSummary).length > 0
+      ? strategiesFromSummary
+      : Object.fromEntries(
+          Object.entries(classifications).map(([key, cls]) => [
+            key,
+            { classification: cls, key_evidence: null, caveats: null },
+          ]),
+        );
 
   const meta = [
     {
@@ -654,6 +670,39 @@ export default function App() {
       let ctx = null;
       const allStepResults = {};
 
+      const finishWithFinalReport = async () => {
+        if (controller.signal.aborted) return;
+
+        setCurrentStep("final_report");
+        addLog("Generating final report...");
+
+        const finalBody = {
+          hgvs,
+          context: ctx,
+          step_results: allStepResults,
+          options: { use_web_search: useWebSearch, verbose },
+        };
+
+        const finalRes = await fetch(`${API_BASE}/assessment/steps/final_report`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(finalBody),
+          signal: controller.signal,
+        });
+
+        if (!finalRes.ok) {
+          const errText = await finalRes.text();
+          throw new Error(`Final report failed (${finalRes.status}): ${errText}`);
+        }
+
+        const reportData = await finalRes.json();
+        setFinalReport(reportData);
+        setPhase("done");
+        setCurrentStep(null);
+        addLog("Assessment complete.");
+        setTimeout(() => reportEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      };
+
       const runOneApprovedStep = async (step, doneIdx) => {
         if (controller.signal.aborted) return false;
 
@@ -829,6 +878,15 @@ export default function App() {
         const ok = await runOneApprovedStep(step, ++doneIdx);
         if (!ok) return;
         if (controller.signal.aborted) return;
+
+        if (step === "pathomechanism" && isUnknownPathomechanism(ctx, allStepResults.pathomechanism)) {
+          addLog(
+            "Pathomechanism unknown — stopping pipeline; all therapy strategies marked unable to assess.",
+          );
+          setActiveStepOrder(PREFIX_STEPS.slice(0, PREFIX_STEPS.indexOf("pathomechanism") + 1));
+          await finishWithFinalReport();
+          return;
+        }
       }
 
       // Route to therapeutic eligibility sections
@@ -868,34 +926,7 @@ export default function App() {
       }
 
       if (!controller.signal.aborted) {
-        setCurrentStep("final_report");
-        addLog("Generating final report...");
-
-        const finalBody = {
-          hgvs,
-          context: ctx,
-          step_results: allStepResults,
-          options: { use_web_search: useWebSearch, verbose },
-        };
-
-        const finalRes = await fetch(`${API_BASE}/assessment/steps/final_report`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(finalBody),
-          signal: controller.signal,
-        });
-
-        if (!finalRes.ok) {
-          const errText = await finalRes.text();
-          throw new Error(`Final report failed (${finalRes.status}): ${errText}`);
-        }
-
-        const reportData = await finalRes.json();
-        setFinalReport(reportData);
-        setPhase("done");
-        setCurrentStep(null);
-        addLog("Assessment complete.");
-        setTimeout(() => reportEndRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+        await finishWithFinalReport();
       }
     } catch (err) {
       if (err.name === "AbortError") {
