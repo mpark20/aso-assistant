@@ -111,7 +111,6 @@ NM_001350626.1:c.1593G>A,Likely eligible for exon skipping,AR,lof,gene_steps_ass
 NM_172107.2:c.998G>A,Unlikely eligible for exon skipping and knockdown,AD,gof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible;knockdown:unlikely_eligible
 NM_001690.3:c.761G>A,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
 NM_014191.3:c.5615G>A,Eligible for knockdown,AD,gof,gene_steps_assessed_variants,knockdown:eligible
-,Unable to assess,AD,unknown,gene_steps_assessed_variants,unable_to_assess
 NM_001165963.4:c.2303C>T,Unable to assess,AD,unknown (likely lof by phenotype),gene_steps_assessed_variants,unable_to_assess
 NM_001165963.4:c.1570G>T,Eligible for WT upregulation,AD,lof,gene_steps_assessed_variants,wt_upregulation:eligible
 NM_000702.4:c.2936C>T,Unlikely eligible for exon skipping,AD,lof,gene_steps_assessed_variants,exon_skipping:unlikely_eligible

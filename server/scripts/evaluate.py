@@ -10,7 +10,8 @@ Usage:
     python evaluate.py path/to/spreadsheet.xlsx
     python evaluate.py path/to/spreadsheet.csv --output-dir evaluation_results
 """
-import pdb
+from collections import defaultdict
+import time
 import argparse
 import json
 import os
@@ -22,6 +23,11 @@ from pathlib import Path
 from dataclasses import asdict
 
 from aso_workflow.pipeline import ASOAssessmentPipeline
+
+# label categories for coarse-grained scoring
+NEG_LABELS = ["not_applicable", "not_eligible", "unable_to_assess", "not_eligible|unable_to_assess"]
+POS_LABELS = ["likely_eligible", "eligible"]
+NEUTRAL_LABELS = ["unlikely_eligible", "applicable"]
 
 
 def sanitize_hgvs_for_filename(hgvs: str, max_length: int = 120) -> str:
@@ -59,11 +65,11 @@ def parse_outcome_str(outcome_str: str) -> dict:
     Parses labels in form "approach1:label1;approach2:label2" into
     {"approach1": "label1", "approach2": "label2"}
 
-    If a therapy has no label, it is considered "not applicable".
+    If a therapy has no label, it is considered "not_eligible|unable_to_assess, as the dataset doesn't explicitly include these".
     All therapies are considered "unable to assess" if the outcome_str = "unable to assess".
     """
     parts = outcome_str.split(";")
-    parsed = {k:"not_applicable" for k in ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]}
+    parsed = {k:"not_eligible|unable_to_assess" for k in ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]}
     if outcome_str == "unable_to_assess":
         return {k:"unable_to_assess" for k in parsed.keys()}
     for part in parts:
@@ -77,7 +83,8 @@ def parse_outcome_str(outcome_str: str) -> dict:
         parsed["transcript_knockdown"] = kd
     return parsed
 
-def score_result(true_outcome: dict, pred_outcome: dict) -> dict:
+
+def calculate_score(true_outcome: dict, pred_outcome: dict, strict: bool = False) -> dict:
     """
     Scores a predicted outcome against a true outcome.
     Assumes both `true_outcome` and `pred_outcome` are dictionaries with keys
@@ -85,22 +92,25 @@ def score_result(true_outcome: dict, pred_outcome: dict) -> dict:
     """
     # grading scale (4 pt possible):
     # - same label = 1 pt
-    # - likely eligible vs eligible = 0.5 pt
-    # - not eligible vs not applicable = 1 pt (this info isn't available in ground truth assessments)
-    # - all other cases = 0 pt
-    neg_edge_cases = ["unable_to_assess", "not_applicable", "not_eligible"]
-    pos_edge_cases = ["likely_eligible", "eligible"]
-    score = 0
+    # - diff label = 0 pt if strict, or potential partial credit for similar options
+    scores = defaultdict(float)
     for k in true_outcome.keys():
-        if true_outcome[k] == pred_outcome[k]:
-            score += 1
-        elif true_outcome[k] in pos_edge_cases and pred_outcome[k] in pos_edge_cases:
-            score += 0.5
-        elif true_outcome[k] in neg_edge_cases and pred_outcome[k] in neg_edge_cases:
-            score += 1
+        pred_outcome[k] = pred_outcome[k].replace("not_applicable", "not_eligible")
+        if pred_outcome[k] in true_outcome[k].split('|'): # e.g. unable_to_assess|not_eligible
+            scores[k] = 1
+        elif strict:
+            scores[k] = 0
+        
+        # otherwise, consider coarse-grained matches
+        elif true_outcome[k] in NEG_LABELS and pred_outcome[k] in NEG_LABELS:
+            scores[k] = 1
+        elif true_outcome[k] in NEUTRAL_LABELS and pred_outcome[k] in NEUTRAL_LABELS:
+            scores[k] = 1
+        elif true_outcome[k] in POS_LABELS and pred_outcome[k] in POS_LABELS:
+            scores[k] = 1
         else:
-            score += 0
-    return score
+            scores[k] = 0
+    return scores
 
 
 def main(args) -> None:
@@ -117,6 +127,7 @@ def main(args) -> None:
     input_file = args.data_file
     model_name = args.model_name
     num_examples = args.num_examples
+    split = args.split
     verbose = not args.quiet
     llm_only = args.llm_only
     use_web_search = args.use_web_search
@@ -129,7 +140,7 @@ def main(args) -> None:
         output_dir += "__web-search"
     os.makedirs(output_dir, exist_ok=True)
 
-    df = load_variants(input_file, split="n1c_test_variants")
+    df = load_variants(input_file, split=split)
     if num_examples:
         df = df.iloc[:num_examples]
     if args.hgvs:
@@ -146,6 +157,7 @@ def main(args) -> None:
     skipped = 0
     processed = 0
     failed = 0
+    start_time = time.time()
 
     true_outcomes = []
     pred_outcomes = []
@@ -211,10 +223,18 @@ def main(args) -> None:
             if verbose:
                 print(f"  ✗ Failed: {e}")
 
-            time.sleep(1)
+            #time.sleep(1)
+    
+    end_time = time.time()
+    print(f"Evaluation took {end_time - start_time} seconds")
+    print(f"Average time per example: {(end_time - start_time) / processed} seconds")
 
-    scores = [score_result(true_outcome, pred_outcome) for true_outcome, pred_outcome in zip(true_outcomes, pred_outcomes)]
-    print(f"Average score: {sum(scores) / len(scores)}")
+    scores = [
+        calculate_score(true_outcome, pred_outcome, strict=True)
+        for true_outcome, pred_outcome in zip(true_outcomes, pred_outcomes)
+    ]
+    scores_df = pd.DataFrame(scores)
+    print(scores_df.mean(numeric_only=True))
 
     if verbose:
         print(f"\n{'='*60}")
@@ -232,7 +252,7 @@ if __name__ == "__main__":
         help="Path to spreadsheet (xlsx or csv) with columns 'hgvs' and 'parsed_outcome'",
         default=Path("data/parsed_n1c_assessments.csv")
     )
-    # this is for the MAIN model, the helper model is hardcoded to gemini/gemini-3.1-flash-lite-preview
+    # this is for the MAIN model, the helper model is hardcoded to gpt-5-nano
     parser.add_argument(
         "-m", "--model-name",
         type=str,
@@ -247,6 +267,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "-n", "--num-examples",
         type=int, default=None, help="Number of examples to evaluate (default: all)"
+    )
+    parser.add_argument(
+        "--split",
+        choices=["n1c_test_variants", "n1c_assessed_variants", "gene_steps_assessed_variants"],
+        default="n1c_test_variants", help="Split to evaluate (default: n1c_test_variants)"
     )
     parser.add_argument(
         "--hgvs",
