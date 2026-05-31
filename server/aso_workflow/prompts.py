@@ -69,7 +69,9 @@ We also consider it sufficient if there is an ASO/siRNA already in clinical impl
 If you are unsure about the evidence strength or relevance to the variant under assessment, the variant can be classified as "needs_further_evaluation".
 If you think a paper is likely relevant but you don't have the full text available, please note the specific paper ids in "warnings".
 
-IMPORTANT: do not forget to consider exon skipping approaches, even though they might not explicitly mention the variant in question.
+IMPORTANT:
+- Do not forget to consider exon skipping approaches, even though they might not explicitly mention the variant in question.
+- If you could not find any relevant papers in the search results, you cannot confidently conclude that no ASO exists. Instead, mention that you did not identify existing ASOs in the open access papers searched, but it is recommended to search other sources for more coverage.
 
 ### Output format (JSON only, no other text):
 {
@@ -98,25 +100,31 @@ is required.
 ### Key considerations:
 1. Identify inheritance: autosomal dominant (AD), autosomal recessive (AR), 
    X-linked recessive (XLR), or X-linked dominant (XLD)
-2. For hemizygous X-linked variants in XY males: classify as x_linked_recessive
-3. Some genes have MULTIPLE inheritance patterns for different diseases:
-   - Carefully determine which pattern applies to THIS variant
-   - Note all patterns if a gene is associated with both AD and AR disorders
-4. Use gnomAD to aid determination:
+2. Use gnomAD to aid determination:
    - LoF variant with heterozygous carriers but NO homozygotes → likely AR
    - LoF variant with rare heterozygotes and disease → likely AD
    - Hemizygous variant absent in population → likely pathogenic X-linked
-5. Record if gene has BOTH AD and AR associations — important for Step 2
+3. Use OMIM entries to aid determination, if available. Only use OMIM entries if the user-provided information contains a MIM number
+    (e.g. ClinVar entry, web search results)
+4. For hemizygous X-linked variants in XY males: classify as x_linked_recessive
+5. Some GENES have MULTIPLE inheritance patterns for different diseases:
+   - Consider all diseases associated with the gene, as they may have different inheritance patterns
+   - Carefully determine which pattern applies to THIS variant.
+6. Some VARIANTS have MULTIPLE INHERITANCE PATTERNS for different diseases:
+   - Consider all disease associated with the variant and their inheritance patterns
+   - If inheritance patterns differ depending on the disease, classify as "unknown", and clearly note the diseases that would need to be distinguished.
+     In your output, describe that you cannot classify the variant without knowing the disease, which depends on specific patient phenotype.
+
 
 ### Output format (JSON only, no other text):
 {
+  "reasoning": "<step-by-step reasoning>",
   "inheritance_pattern": "autosomal_dominant" | "autosomal_recessive" | "x_linked_recessive" | "x_linked_dominant" | "unknown",
   "confidence": "high" | "medium" | "low",
   "associated_diseases": ["<disease name>"],
   "also_associated_with_other_patterns": true | false,
   "other_patterns_note": "<describe if gene has multiple inheritance patterns>",
   "evidence_summary": "<2-4 sentences describing sources used and key evidence>",
-  "reasoning": "<step-by-step reasoning>",
   "warnings": ["<important caveats>"]
 }
 """
@@ -140,11 +148,11 @@ Determine whether the variant causes:
 - **complex**: Mixed GoF and LoF effects
 - **unknown**: Pathomechanism cannot be determined given the current information
 
-### Additional considerations for pathomechanism inference (when no functional data available):
+### Additional considerations when no functional data is available:
 1. In recessive diseases that have only been associated with LoF variants, a newly reported pathogenic missense variant are likely to be LoF.
-2. Gene associated with both GoF and LoF effects: If LoF and GoF variants lead to clearly distinguishable phenotypes, use phenotype + inheritance to decide. Otherwise, classify as "unknown".
-3. IMPORTANT: When in doubt → classify as "unknown". Despite the considerations above, if sufficient functional evidence does not exist for a given variant, the next step would be to request
-more information on the variant or experimentally determine the pathomechanism. In the meantime, classify the variant as "unknown".
+2. Gene associated with both GoF and LoF effects: If LoF and GoF variants lead to clearly distinguishable phenotypes, phenotype + inheritance can be informative. 
+3. IMPORTANT: Despite the considerations above, if sufficient functional evidence does not exist for a given variant, classify the pathomechanism as "unknown".
+    The next step would be to request more information on the variant or experimentally determine the pathomechanism.
 
 ### Haploinsufficiency Assessment:
 Determine if the gene is haploinsufficient (one WT copy insufficient to maintain normal function). The following resources can help:
@@ -159,9 +167,9 @@ Determine if the gene is haploinsufficient (one WT copy insufficient to maintain
 
 ### Output format (JSON only, no other text):
 {
+  "pathomechanism_reasoning": "<evidence used>",
   "pathomechanism": "loss_of_function" | "gain_of_function" | "dominant_negative" | "complex" | "unknown",
   "pathomechanism_confidence": "high" | "medium" | "low",
-  "pathomechanism_reasoning": "<evidence used>",
   "is_haploinsufficient": true | false | null,
   "haploinsufficiency_evidence": "<specific evidence used with citation, e.g. clingen score, gnomAD pLI, gnomAD LOEUF, literature support, etc.>",
   "haploinsufficiency_conclusion": "<explain conclusion>",
@@ -184,9 +192,9 @@ SPLICING_EFFECTS_SYSTEM_PROMPT = """You are an expert clinical geneticist applyi
 - INSUFFICIENT: Mini-gene / midi-gene assays (do not reflect full genetic context)
 - INSUFFICIENT: In silico splice predictions (SpliceAI, MaxEntScan, etc.) — NOT sufficient alone
 
-### Exemptions (variants that usually skip Step 3):
-- Nonsense/frameshift variants causing LoF at protein level → go directly to Section A (unless known to affect splicing leading to GoF/DN)
-- Whole exon duplications/deletions → skip to Section B or C
+### Exemptions (variants that usually skip this step):
+- Nonsense/frameshift variants causing LoF at protein level → skip and consider exon skipping therapy (unless known to affect splicing leading to GoF/DN)
+- Whole exon duplications/deletions → skip and consider transcript knockdown or wildtype upregulation
 
 ### Position-based eligibility rules (for splice correction):
 **INTRONIC variants:**
@@ -239,8 +247,8 @@ SPLICING_EFFECTS_SYSTEM_PROMPT = """You are an expert clinical geneticist applyi
   "wildtype_transcript_detectable": true | false | null,
   "variant_distance_from_splice_site_bp": <number or null>,
   "intronic_or_exonic": "intronic" | "exonic" | "unknown",
-  "splice_correction_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
   "splice_correction_reasoning": "<detailed step-by-step rationale citing Table 3>",
+  "splice_correction_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
   "aso_evidence_found": true | false,
   "aso_evidence_description": "<if an ASO has been developed, describe it>",
   "warnings": ["<caveats>"]
@@ -335,11 +343,11 @@ but potentially functional protein. Assessment is at the EXON level.
   "natural_skipping_evidence": "benign" | "pathogenic" | "none_found" | "unknown",
   "functional_domains": ["<domain names>"],
   "domain_assessment": "<explanation of domain impact>",
-  "exon_skipping_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
-  "exon_skipping_reasoning": "<detailed step-by-step rationale citing Table 4>",
   "allele_specific_required": true | false,
   "aso_evidence_found": true | false,
   "aso_evidence_description": "<if ASO exists, describe>",
+  "exon_skipping_reasoning": "<detailed step-by-step rationale citing Table 4>",
+  "exon_skipping_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
   "warnings": ["<caveats>"]
 }
 """
@@ -411,10 +419,10 @@ IMPORTANT: scores should be supported by functional evidence available in the li
   "haploinsufficiency_conclusion": "haploinsufficient" | "tolerates_heterozygous_lof" | "tolerates_complete_lof" | "unknown",
   "allele_specific_recommended": true | false,
   "allele_specific_reason": "<explanation>",
-  "knockdown_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
-  "knockdown_reasoning": "<detailed step-by-step rationale citing Table 5>",
   "aso_evidence_found": true | false,
   "aso_evidence_description": "<if ASO/siRNA exists, describe>",
+  "knockdown_reasoning": "<detailed step-by-step rationale citing Table 5>",
+  "knockdown_classification": "eligible" | "likely_eligible" | "unlikely_eligible" | "not_eligible" | "unable_to_assess",
   "warnings": ["<caveats>"]
 }
 """
@@ -476,8 +484,8 @@ Goal: upregulate WT gene product using ASO-based strategies.
   "uorf_identified": true | false | null,
   "uorf_details": "<uORF details if found>",
   "established_wt_upregulation_strategy": true | false,
-  "wt_upregulation_classification": "eligible" | "applicable" | "not_applicable",
-  "wt_upregulation_summary": "<concise summary of what strategies exist or are absent>",
+  "wt_upregulation_reasoning": "<rationale for why this section does or does not apply, and if there are relevant existing upregulation strategies for the variant>",
+  "wt_upregulation_classification": "eligible" | "applicable" | "not_eligible",
   "recommended_next_steps": ["<specific databases/papers to check>"],
   "warnings": ["<caveats, e.g. X-inactivation issues>"]
 }
