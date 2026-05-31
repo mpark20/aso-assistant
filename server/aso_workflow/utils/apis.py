@@ -72,8 +72,6 @@ def query_api_with_retry(endpoint, method="GET", params=None, headers=None, json
     if description is None:
         description = f"{method} request to {endpoint}"
 
-    url_error = None
-
     try:
         # Make the API request
         if method.upper() == "GET":
@@ -1249,20 +1247,22 @@ def search_omim(mim_number: str) -> dict[str, any]:
     dict
         Full JSON response from the OMIM API for the given entry.
     """
+    response = query_api_with_retry(
+        endpoint="https://api.omim.org/api/entry",
+        method="GET",
+        params={
+            "mimNumber": mim_number,
+            "include": "all",      # request all available sections
+            "format": "json",
+            "apiKey": os.getenv("OMIM_API_KEY")
+        },
+        headers={"Content-Type": "application/json"},
+    )
 
-    base_url = "https://api.omim.org/api/entry"
-    
-    params = {
-        "mimNumber": mim_number,
-        "include": "all",      # request all available sections
-        "format": "json",
-        "apiKey": os.getenv("OMIM_API_KEY")
-    }
+    if not response.get("success") or not response.get("result"):
+        return response
 
-    response = requests.get(base_url, params=params)
-    response.raise_for_status()
-
-    return response.json()
+    return response["result"]
 
 
 def search_alt_splicing_events(gene_symbol: str) -> list[dict[str, any]]:
@@ -1292,6 +1292,86 @@ def search_alt_splicing_events(gene_symbol: str) -> list[dict[str, any]]:
     return hits
 
 
+class SpliceVarDBResult(TypedDict, total=False):
+    hgvs_RefSeq: str
+    gene_symbol_list: str
+    message: str = ""
+    source_url: str
+    variant_id: Optional[int]
+    chr: Optional[str]
+    pos_hg38: Optional[str]
+    pos_hg19: Optional[str]
+    ref: Optional[str]
+    alt: Optional[str]
+    method_report: Optional[str]
+    classification: Optional[str]
+    location: Optional[str]
+    validation: Optional[dict[str, any]]
+
+def search_splicevardb(hgvs: str, gene_symbol: str) -> SpliceVarDBResult:
+    """
+    Look up experimentally validated splice variants in SpliceVarDB.
+    Returns a a record containing splicing information about the query variant,
+    or a message stating that nothing was found. If there are any network errors,
+    this will be returned in the message.
+    """
+    source_url = "https://splicevardb.org/"
+    base_url = "https://splicevardb.org/splicevardb-api"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.getenv('SPLICE_VAR_DB_TOKEN')}",
+    }
+
+    # get search results that match the gene
+    search_response = query_api_with_retry(
+        endpoint=f"{base_url}/variants/filter",
+        method="POST",
+        json_data = {"gene": [gene_symbol]},
+        headers=headers
+    )
+    if not search_response.get("success") or not search_response.get("result"):
+        err_msg = search_response.get("raw_text") or search_response.get("error")
+        return SpliceVarDBResult(
+            hgvs_RefSeq=hgvs,
+            gene_symbol_list=gene_symbol,
+            message=err_msg,
+            source_url=source_url
+        )
+    search_results = search_response["result"].get("data", [])
+    
+    # find matches and get detailed summary
+    for summary in search_results:
+        if hgvs != summary.get("hgvs_RefSeq", ""):
+            continue
+        if gene_symbol != summary.get("gene_symbol_list", ""):
+            continue
+        if not summary.get("variant_id"):
+            continue
+
+        variant_id = summary["variant_id"]
+        response = query_api_with_retry(
+            endpoint=f"{base_url}/variants/{variant_id}",
+            method="GET",
+            headers=headers
+        )
+        if not response.get("success") or not response.get("result"):
+            err_msg = response.get("raw_text") or response.get("error")
+            return SpliceVarDBResult(
+                hgvs_RefSeq=hgvs,
+                gene_symbol_list=gene_symbol,
+                message=err_msg,
+                source_url=source_url
+            )
+        
+        return SpliceVarDBResult(**response["result"], source_url=source_url)
+
+    return SpliceVarDBResult(
+        hgvs_RefSeq=hgvs,
+        gene_symbol_list=gene_symbol,
+        message="No splice variants found in SpliceVarDB for this gene and variant.",
+    )
+
+
 if __name__ == "__main__":
     # # ensembl vep
     # result = search_ensembl_vep("NM_024312.5:c.3503_3504del")
@@ -1304,7 +1384,10 @@ if __name__ == "__main__":
     # gene = var_info["gene_id"]
 
     # fetch gnomad variants
-    results = search_gnomad(gene_symbol="ABCA4")
+    # results = search_gnomad(gene_symbol="ABCA4")
+    # print(json.dumps(results, indent=2))
+
+    results = search_splicevardb("NM_194292.3:c.1092A>G", "SASS6")
     print(json.dumps(results, indent=2))
 
     # # fetch domains from uniprot

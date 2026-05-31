@@ -783,7 +783,7 @@ GENE: {gene}
 HGVS: {norm_hgvs}
 
 Important: Only RNAseq, qPCR, or cDNA from patient-derived cells counts as sufficient 
-functional evidence. In silico predictions are NOT sufficient.
+functional evidence. In silico predictions alone are NOT sufficient.
 
 Apply Step 3 criteria (Table 3) and return your JSON assessment.
 """
@@ -809,6 +809,9 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             transcript_ctx = fetch_transcript_context(norm_hgvs)
             context.raw_cache["transcript_context"] = transcript_ctx
 
+            svdb_result = search_splicevardb(norm_hgvs, gene)
+            context.raw_cache["splicevardb"] = svdb_result
+
             search_query = f"{gene} AND (splicing)"
             equiv = mutalyzer_data.get("equivalent_descriptions") or []
             synonyms = [norm_hgvs] + equiv
@@ -823,6 +826,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             raw_data = {
                 "vep": vep_data,
                 "transcript_context": transcript_ctx,
+                "splicevardb": svdb_result,
                 "clinvar": clinvar_data,
                 "pubmed": pubmed_results,
             }
@@ -852,11 +856,14 @@ ENSEMBL VEP ANNOTATION:
 CLINVAR DATA:
 {clinvar_data}
 
+SpliceVarDB RESULTS:
+{svdb_result}
+
 PUBMED SEARCH RESULTS:
 {pubmed_results}
 
 Important: Only RNAseq, qPCR, or cDNA from patient-derived cells counts as sufficient 
-functional evidence. In silico predictions are NOT sufficient.
+functional evidence. In silico predictions alone are NOT sufficient.
 
 Apply Step 3 criteria (Table 3) and return your JSON assessment.
 """
@@ -915,6 +922,7 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             },
             token_usage=usage,
         )
+
 
     # ─────────────────────────────────────────────────────────────
     # Routing helpers
