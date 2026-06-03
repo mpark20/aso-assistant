@@ -229,13 +229,6 @@ def main(args) -> None:
     print(f"Evaluation took {end_time - start_time} seconds")
     print(f"Average time per example: {(end_time - start_time) / processed} seconds")
 
-    scores = [
-        calculate_score(true_outcome, pred_outcome, strict=True)
-        for true_outcome, pred_outcome in zip(true_outcomes, pred_outcomes)
-    ]
-    scores_df = pd.DataFrame(scores)
-    print(scores_df.mean(numeric_only=True))
-
     if verbose:
         print(f"\n{'='*60}")
         print(f"Evaluation complete: {processed} processed, {skipped} skipped, {failed} failed")
