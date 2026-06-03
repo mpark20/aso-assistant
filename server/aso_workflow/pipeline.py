@@ -329,7 +329,7 @@ your JSON assessment.
             system_prompt=SYSTEM_PROMPTS["variant_check"],
             user_message=user_msg,
             expect_json=True,
-            model=self.model_name,
+            model="gpt-5-nano",
             use_web_search=self.use_web_search,
         )
 
@@ -1549,7 +1549,7 @@ Do not change the classification labels in the step results.
             )
 
         md = dict(result.metadata or {})
-        md["user_revised"] = True
+        md["user_revised"] = bool(result.edits)
         result = StepResult(
             step_name=result.step_name,
             classification=result.classification,
@@ -1559,6 +1559,7 @@ Do not change the classification labels in the step results.
             metadata=md,
             error=result.error,
             token_usage=result.token_usage,
+            edits=list(result.edits or []),
         )
 
         parsed: Optional[dict[str, Any]] = None

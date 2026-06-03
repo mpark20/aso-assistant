@@ -52,6 +52,8 @@ class StepResult:
     error: Optional[str] = None
     # Token usage per model: {model: {"input_tokens": int, "output_tokens": int, "total_tokens": int}}
     token_usage: dict[str, dict[str, int]] = field(default_factory=dict)
+    # User edits at approve time: [{field, at, before}, ...]; empty when unchanged
+    edits: list[dict[str, Any]] = field(default_factory=list)
 
 
 # ─────────────────────────────────────────────
@@ -152,6 +154,7 @@ class ASOAssessmentReport:
                     "data_used": r.data_used,
                     "error": r.error,
                     "token_usage": r.token_usage,
+                    "edits": r.edits,
                 }
                 for name, r in self.step_results.items()
             },

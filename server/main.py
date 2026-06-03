@@ -174,6 +174,7 @@ def step_result_from_dict(data: dict[str, Any]) -> StepResult:
         metadata=data.get("metadata") or {},
         error=data.get("error"),
         token_usage=data.get("token_usage") or {},
+        edits=data.get("edits") or [],
     )
 
 

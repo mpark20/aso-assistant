@@ -75,6 +75,43 @@ function variantCheckFromReviewClassification(reviewCls) {
   return reviewCls === "invalid" ? "unable_to_assess" : "eligible";
 }
 
+/** Serialize reasoning for consistent edit comparison. */
+function normalizeStepReasoning(reasoning) {
+  if (reasoning == null) return "";
+  if (typeof reasoning === "string") return reasoning;
+  return JSON.stringify(reasoning, null, 2);
+}
+
+/** Edit records for fields changed at approve time (LLM `before` only; final value is in the step). */
+function buildStepEdits(original, approvedPayload, step) {
+  const edits = [];
+  const at = new Date().toISOString();
+
+  const recordIfChanged = (field, beforeVal, afterVal) => {
+    const before = String(beforeVal ?? "");
+    const after = String(afterVal ?? "");
+    if (before === after) return;
+    edits.push({ field, at, before: beforeVal ?? "" });
+  };
+
+  recordIfChanged("summary", original.summary, approvedPayload.summary);
+  recordIfChanged(
+    "reasoning",
+    normalizeStepReasoning(original.reasoning),
+    normalizeStepReasoning(approvedPayload.reasoning),
+  );
+
+  if (STEPS_WITH_CLASSIFICATION_EDITOR.has(step)) {
+    recordIfChanged(
+      "classification",
+      original.classification,
+      approvedPayload.classification,
+    );
+  }
+
+  return edits;
+}
+
 const STRATEGY_LABELS = {
   splice_correction: "Splice correction",
   exon_skipping: "Exon skipping",
@@ -968,6 +1005,11 @@ export default function App() {
           stepResultPayload.classification = reviewEdits.classification;
         }
       }
+      stepResultPayload.edits = buildStepEdits(
+        reviewUI.stepResult,
+        stepResultPayload,
+        reviewUI.step,
+      );
       const res = await fetch(`${API_BASE}/assessment/steps/${reviewUI.step}/approve`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
