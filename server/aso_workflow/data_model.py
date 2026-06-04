@@ -132,6 +132,7 @@ class ASOAssessmentReport:
 
     date: Optional[str] = None
     model_name: Optional[str] = None
+    duration: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -160,4 +161,5 @@ class ASOAssessmentReport:
             },
             "model_name": self.model_name,
             "date": self.date,
+            "duration": self.duration
         }

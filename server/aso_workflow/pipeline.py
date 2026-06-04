@@ -18,7 +18,7 @@ Usage:
 """
 import pdb
 import json
-from pathlib import Path
+import time
 import traceback
 from typing import Any, Optional
 from datetime import datetime
@@ -118,6 +118,7 @@ class ASOAssessmentPipeline:
         Returns:
             ASOAssessmentReport with all classifications and reasoning
         """
+        start_time = time.time()
         context = AssessmentContext(hgvs_input=hgvs)
         step_results: dict[str, StepResult] = {}
 
@@ -222,7 +223,7 @@ class ASOAssessmentPipeline:
 
         # ── Final Report ──────────────────────────────────────────
         self._log("\nGenerating final report...")
-        report = self.make_final_report(hgvs, context, step_results)
+        report = self.make_final_report(hgvs, context, step_results, start_time=start_time)
 
         self._log(f"\n{'='*60}")
         self._log("ASSESSMENT COMPLETE")
@@ -1441,6 +1442,7 @@ Note: This section does NOT classify as likely/unlikely eligible - only "eligibl
         hgvs: str,
         context: AssessmentContext,
         step_results: dict[str, StepResult],
+        start_time: Optional[float] = None
     ) -> ASOAssessmentReport:
         """
         Generate the final ASO assessment report.
@@ -1514,6 +1516,11 @@ Do not change the classification labels in the step results.
         # remove the aso_check from the raw_cache, as now it's in step_results
         if "aso_check" in context.raw_cache:
             context.raw_cache.pop("aso_check")
+        
+        duration = None
+        if start_time is not None:
+            end_time = time.time()
+            duration = int(end_time - start_time)
 
         return ASOAssessmentReport(
             hgvs=hgvs,
@@ -1528,6 +1535,7 @@ Do not change the classification labels in the step results.
             total_token_usage=_aggregate_token_usage(step_results),
             date=datetime.now().strftime("%Y-%m-%d"),
             model_name=self.model_name,
+            duration=duration
         )
     
     def merge_step_result(
