@@ -24,6 +24,8 @@ from dataclasses import asdict
 
 from aso_workflow.pipeline import ASOAssessmentPipeline
 
+THERAPY_TYPES = ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]
+
 # label categories for coarse-grained scoring
 NEG_LABELS = ["not_applicable", "not_eligible", "unable_to_assess", "not_eligible|unable_to_assess"]
 POS_LABELS = ["likely_eligible", "eligible"]
@@ -69,9 +71,9 @@ def parse_outcome_str(outcome_str: str) -> dict:
     All therapies are considered "unable to assess" if the outcome_str = "unable to assess".
     """
     parts = outcome_str.split(";")
-    parsed = {k:"not_eligible|unable_to_assess" for k in ["splice_correction", "exon_skipping", "transcript_knockdown", "wt_upregulation"]}
+    parsed = {}
     if outcome_str == "unable_to_assess":
-        return {k:"unable_to_assess" for k in parsed.keys()}
+        return {k:"unable_to_assess" for k in THERAPY_TYPES}
     for part in parts:
         if ':' in part:
             # add underscores to match the automated pipeline output format

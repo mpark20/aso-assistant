@@ -17,3 +17,5 @@ openpyxl
 matplotlib
 anthropic
 scikit-learn
+ipykernel
+seaborn
