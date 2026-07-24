@@ -21,6 +21,7 @@ from aso_workflow.utils.clinvar import clinvar_formatter
 from aso_workflow.utils.pubmed import pubmed_formatter
 
 MAX_RETRIES = 3
+TIMEOUT = 120
 
 class APIResponse(TypedDict):
     success: bool
@@ -436,7 +437,7 @@ class BrowseWebpageResult(TypedDict):
     success: bool
 
 @cache
-async def browse_webpage(url: str) -> BrowseWebpageResult:
+async def browse_webpage(url: str, timeout=TIMEOUT) -> BrowseWebpageResult:
     """
     Crawl a given webpage URL and return its contents as markdown.
 
@@ -464,6 +465,7 @@ async def browse_webpage(url: str) -> BrowseWebpageResult:
     #         content_filter = None
 
     run_config = CrawlerRunConfig(
+        page_timeout=timeout*1000,  # page_timeout is in ms
         exclude_social_media_links=True,
         excluded_tags=["form", "header", "footer", "nav"],
         exclude_domains=["ads.com", "spammytrackers.net"],
@@ -498,6 +500,34 @@ async def browse_webpage(url: str) -> BrowseWebpageResult:
         url=url,
         text=md_value,
         success=True,
+    )
+
+
+async def browse_webpage_jina(url: str, timeout=TIMEOUT) -> BrowseWebpageResult:
+    api_key = os.getenv("JINA_API_KEY")
+    if not api_key:
+        raise ValueError("Requires JINA_API_KEY env variable to be set, but none was found")
+    jina_url = f"https://r.jina.ai/{url}"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Accept": "application/json",
+    }
+    response = requests.get(jina_url, headers=headers, timeout=timeout)
+
+    if response.status_code != 200:
+        return BrowseWebpageResult(
+            url=url,
+            text=f"API request failed with status {response.status_code}: {response.text}",
+            success=False,
+        )
+
+    res_json = response.json()
+    data = res_json.get("data", {})
+    content = data.get("content", "")
+    title = data.get("title", "")
+    return BrowseWebpageResult(
+        url=data.get("url", url),
+        text=f"Title: {title}\n{content}"
     )
 
 
@@ -1387,8 +1417,9 @@ if __name__ == "__main__":
     # results = search_gnomad(gene_symbol="ABCA4")
     # print(json.dumps(results, indent=2))
 
-    results = search_splicevardb("NM_194292.3:c.1092A>G", "SASS6")
-    print(json.dumps(results, indent=2))
+    # results = search_splicevardb("NM_194292.3:c.1092A>G", "SASS6")
+    # print(json.dumps(results, indent=2))
+
 
     # # fetch domains from uniprot
     # results = search_uniprot(gene_name=gene)
@@ -1400,3 +1431,11 @@ if __name__ == "__main__":
     # # select an interpro feature to browse in depth
     # result = browse_interpro("IPR060126")
     # print(json.dumps(result, indent=2))
+
+    # browse webpage
+    import asyncio
+    # url = "https://s.jina.ai/?q=Jina+AI"
+    url = "https://webscraper.io/test-sites/tables"
+    print(url)
+    result = asyncio.run(browse_webpage_jina(url))
+    print(json.dumps(result, indent=2))

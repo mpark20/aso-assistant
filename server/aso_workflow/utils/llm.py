@@ -26,7 +26,7 @@ from google.genai import types
 
 load_dotenv()
 
-from aso_workflow.utils.apis import browse_webpage, search_omim
+from aso_workflow.utils.apis import browse_webpage, browse_webpage_jina, search_omim
 from aso_workflow.utils.pubmed import fetch_pubmed, fetch_pmc_fulltext, url_to_pmid, url_to_pmcid
 from aso_workflow.prompts import SYSTEM_PROMPTS
 
@@ -709,7 +709,10 @@ def fetch_and_extract(url: str, question: str, cache: dict) -> str:
         
         # otherwise, use raw webpage browsing
         if content is None:
-            resp = asyncio.run(browse_webpage(url))
+            if os.getenv("JINA_API_KEY"):
+                resp = asyncio.run(browse_webpage_jina(url))
+            else:
+                resp = asyncio.run(browse_webpage(url))
             content = json.dumps(resp, indent=2)
         
         # truncate the content to the maximum allowed length, but record the original
