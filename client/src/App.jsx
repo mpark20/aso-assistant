@@ -1,7 +1,8 @@
 import { useState, useRef, useCallback } from "react";
+import { downloadReportPdf } from "./reportPdf";
 
-// const API_BASE = "http://localhost:8080";
-const API_BASE = "https://aso-assistant-production.up.railway.app"
+const API_BASE = "http://localhost:8080";
+//const API_BASE = "https://aso-assistant-production.up.railway.app"
 
 /** Core steps through splicing; therapy sections are chosen after `/assessment/steps/routing`. */
 const PREFIX_STEPS = [
@@ -416,7 +417,35 @@ function StrategyCard({ stratKey, strat }) {
   );
 }
 
-function FinalReport({ report, onDownload }) {
+function DownloadButton({ onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 16px",
+        borderRadius: "var(--border-radius-md)",
+        background: "var(--color-background-primary)",
+        color: "var(--color-text-primary)",
+        border: "0.5px solid var(--color-border-secondary)",
+        fontSize: 13,
+        cursor: "pointer",
+      }}
+      onMouseOver={e => { e.currentTarget.style.background = "var(--color-background-secondary)"; }}
+      onMouseOut={e => { e.currentTarget.style.background = "var(--color-background-primary)"; }}
+    >
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
+        <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      {children}
+    </button>
+  );
+}
+
+function FinalReport({ report, onDownloadJson, onDownloadPdf }) {
   const summaryRaw = report.summary;
   const s = summaryRaw !== null && typeof summaryRaw === "object" && !Array.isArray(summaryRaw)
     ? summaryRaw
@@ -629,37 +658,17 @@ function FinalReport({ report, onDownload }) {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onDownload}
-        style={{
-          marginTop: 8,
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "8px 16px",
-          borderRadius: "var(--border-radius-md)",
-          background: "var(--color-background-primary)",
-          color: "var(--color-text-primary)",
-          border: "0.5px solid var(--color-border-secondary)",
-          fontSize: 13,
-          cursor: "pointer",
-        }}
-        onMouseOver={e => { e.currentTarget.style.background = "var(--color-background-secondary)"; }}
-        onMouseOut={e => { e.currentTarget.style.background = "var(--color-background-primary)"; }}
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
-          <path d="M7 1v8M4 6l3 3 3-3M2 11h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        Download report JSON
-      </button>
+      <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <DownloadButton onClick={onDownloadPdf}>Download PDF summary</DownloadButton>
+        <DownloadButton onClick={onDownloadJson}>Download full JSON</DownloadButton>
+      </div>
     </div>
   );
 }
 
 export default function App() {
-  const [refSeq, setRefSeq] = useState("NM_000329.3");
-  const [codingChange, setCodingChange] = useState("c.1430A>G");
+  const [refSeq, setRefSeq] = useState("NM_000492.4");
+  const [codingChange, setCodingChange] = useState("c.2989-313A>T");
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [verbose, setVerbose] = useState(false);
 
@@ -1072,14 +1081,20 @@ export default function App() {
     setApproveError(null);
   };
 
-  const downloadReport = () => {
+  const reportBasename = `aso-report-${hgvs.replace(/[^a-zA-Z0-9]/g, "_")}`;
+
+  const downloadReportJson = () => {
     const blob = new Blob([JSON.stringify(finalReport, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `aso-report-${hgvs.replace(/[^a-zA-Z0-9]/g, "_")}.json`;
+    a.download = `${reportBasename}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadReportPdfFile = () => {
+    downloadReportPdf(finalReport, `${reportBasename}.pdf`);
   };
 
   const isRunning = phase === "running";
@@ -1137,7 +1152,7 @@ export default function App() {
                 <input
                   value={refSeq}
                   onChange={e => setRefSeq(e.target.value)}
-                  placeholder="e.g. NM_000329.3"
+                  placeholder="e.g. NM_000070.3"
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
@@ -1159,7 +1174,7 @@ export default function App() {
                 <input
                   value={codingChange}
                   onChange={e => setCodingChange(e.target.value)}
-                  placeholder="e.g. c.1430A>G"
+                  placeholder="e.g. c.2105C>T"
                   style={{
                     width: "100%",
                     boxSizing: "border-box",
@@ -1532,7 +1547,11 @@ export default function App() {
               borderRadius: "var(--border-radius-lg)",
               padding: "14px 16px",
             }}>
-              <FinalReport report={finalReport} onDownload={downloadReport} />
+              <FinalReport
+                report={finalReport}
+                onDownloadJson={downloadReportJson}
+                onDownloadPdf={downloadReportPdfFile}
+              />
             </div>
           </div>
         )}
