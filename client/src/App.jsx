@@ -183,18 +183,7 @@ function ProgressBar({ current, total }) {
 /** Same display rules as the former StepCard reasoning block (JSON object → show `reason` when truthy). */
 function formatReasoningDisplay(reasoning) {
   if (reasoning == null || reasoning === "") return "";
-  if (typeof reasoning === "string") {
-    try {
-      const parsed = JSON.parse(reasoning);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed.reason || reasoning;
-      }
-    } catch {
-      /* use full string */
-    }
-    return reasoning;
-  }
-  return JSON.stringify(reasoning, null, 2);
+  return reasoning
 }
 
 /** Collapsible raw sources JSON; shared by StepResultDetail and the review panel. */
@@ -684,6 +673,7 @@ export default function App() {
   const [log, setLog] = useState([]);
 
   const [reviewUI, setReviewUI] = useState(null);
+  // TODO: user should be able to edit all fields in stepResult.metadata, not just summary and reasoning.
   const [reviewEdits, setReviewEdits] = useState({ summary: "", reasoning: "", classification: "" });
   const [approveBusy, setApproveBusy] = useState(false);
   const [approveError, setApproveError] = useState(null);
@@ -765,6 +755,7 @@ export default function App() {
           },
         };
 
+        // Make request to run the current step
         const res = await fetch(`${API_BASE}/assessment/steps/${step}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -782,54 +773,11 @@ export default function App() {
         const result = data.step_result;
         setStepResults(prev => ({ ...prev, [step]: result }));
 
-        if (step === "variant_check") {
-          const variantCheckCls = String(result.classification ?? "")
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, "_")
-            .replace(/-/g, "_");
-
-          if (data.context?.variant_valid === false) {
-            setStepStatuses((prev) => ({ ...prev, [step]: "done" }));
-            const detail = (result.summary || "").trim();
-            setError(
-              "This variant did not pass Step 0 validation, so the assessment cannot continue. " +
-                "Correct your reference sequence and HGVS notation, then run the assessment again." +
-                (detail ? ` ${detail}` : ""),
-            );
-            setPhase("error");
-            setCurrentStep(null);
-            addLog(
-              `Stopped: invalid variant — ${detail || "update HGVS and restart."}`,
-            );
-            return false;
-          }
-
-          if (variantCheckCls === "unable_to_assess") {
-            setStepStatuses((prev) => ({ ...prev, [step]: "done" }));
-            const detail = (result.summary || "").trim();
-            setError(
-              "Step 0 classifies this variant as unable to assess under the N1C VARIANT guidelines " +
-                "(not applicable or excluded), so the pipeline stops here. " +
-                "Use a variant that falls within the guideline scope, or start a new assessment after reviewing the rationale." +
-                (detail ? ` ${detail}` : ""),
-            );
-            setPhase("error");
-            setCurrentStep(null);
-            addLog(
-              `Stopped: unable to assess (Step 0) — ${detail || "see message above."}`,
-            );
-            return false;
-          }
-        }
-
+        // Trigger review UI
         setStepStatuses(prev => ({ ...prev, [step]: "reviewing" }));
         addLog(`Review: ${STEP_LABELS[step] ?? step} — edit if needed, then approve to continue.`);
 
-        const reasoningStr =
-          typeof result.reasoning === "string"
-            ? result.reasoning
-            : JSON.stringify(result.reasoning ?? "", null, 2);
+        const reasoningStr = result.reasoning
 
         setReviewEdits({
           summary: result.summary ?? "",
@@ -876,6 +824,7 @@ export default function App() {
         setCompletedCount(doneIdx);
         addLog(`Approved: ${STEP_LABELS[step] ?? step} → ${finalized.classification}`);
 
+         // Handle early exit cases
         if (step === "variant_check") {
           const approvedCls = String(finalized.classification ?? "")
             .trim()
@@ -990,6 +939,7 @@ export default function App() {
     if (!reviewUI || !approvalDeferredRef.current) return;
     setApproveBusy(true);
     setApproveError(null);
+
     try {
       const stepResultPayload = {
         ...reviewUI.stepResult,
@@ -1000,16 +950,7 @@ export default function App() {
         if (reviewUI.step === "variant_check") {
           const isValid = reviewEdits.classification === "valid";
           stepResultPayload.classification = variantCheckFromReviewClassification(reviewEdits.classification);
-          try {
-            const parsed = JSON.parse(stepResultPayload.reasoning);
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-              parsed.variant_valid = isValid;
-              parsed.classification = stepResultPayload.classification;
-              stepResultPayload.reasoning = JSON.stringify(parsed, null, 2);
-            }
-          } catch {
-            /* keep reasoning as edited */
-          }
+
         } else {
           stepResultPayload.classification = reviewEdits.classification;
         }
@@ -1124,10 +1065,12 @@ export default function App() {
 
         <div style={{ marginBottom: "1.5rem" }}>
           <h1 style={{ fontSize: 22, fontWeight: 500, margin: "0 0 4px", color: "var(--color-text-primary)" }}>
-            N1C Variant ASO Assessor
+            N1C VARIANT ASO Eligibility Tool
           </h1>
           <p style={{ fontSize: 14, color: "var(--color-text-secondary)", margin: 0, lineHeight: 1.5 }}>
             LLM-assisted tool for assessing variants for ASO eligibility according to the <a href="https://doi.org/10.1016/j.ajhg.2025.02.017" target="_blank" rel="noopener noreferrer" style={{ color: "blue" }}>N1C VARIANT</a> guidelines.
+            <br/><br/>
+            <b>For research use only.</b> This report is generated by an automated variant-assessment pipeline and has not been reviewed by a board-certified clinical molecular geneticist. All classifications should be independently verified against source literature and current clinical guidelines prior to use.
           </p>
         </div>
 
@@ -1257,6 +1200,11 @@ export default function App() {
             marginBottom: "1.25rem",
             animation: "fadeSlideIn 0.3s ease",
           }}>
+            
+            <h2 style={{ fontSize: 22, fontWeight: 500, color: "var(--color-text-primary)", margin: "0 0 4px" }}>
+              {hgvs}
+            </h2>
+
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {!isReviewing && (
@@ -1315,11 +1263,11 @@ export default function App() {
 
             {/* User editing screen */}
             {isReviewing && reviewUI && (() => {
-              const reasoningDisplayReview = formatReasoningDisplay(reviewEdits.reasoning);
+              const reasoningDisplayReview = String(reviewEdits.reasoning ?? "");
               const summaryReview = String(reviewEdits.summary ?? "");
               const showReasoningEditor =
                 reasoningDisplayReview !== summaryReview
-                || reviewEdits.reasoning !== reasoningDisplayReview;
+                && reasoningDisplayReview !== "";
               return (
               <div style={{
                 marginBottom: 16,
@@ -1345,6 +1293,7 @@ export default function App() {
                   </div>
                 )}
 
+                {/* TODO: make this show every field in reviewUI.stepResult.metadata */}
                 {STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step) && (
                   <div style={{ marginBottom: 12 }}>
                     <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
