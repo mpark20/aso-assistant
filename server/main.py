@@ -7,6 +7,7 @@ serially and pass the accumulated AssessmentContext between calls.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, fields
 from typing import Any, Literal, Optional
 
@@ -40,7 +41,7 @@ app.add_middleware(
 
 # Mirrors ASOAssessmentPipeline.STEP_MAP keys (single source for route list)
 PIPELINE_STEP_NAMES: tuple[str, ...] = tuple(ASOAssessmentPipeline.STEP_MAP.keys())
-DEFAULT_MODEL_NAME = "claude-sonnet-4-6" #"gpt-5"
+DEFAULT_MODEL_NAME = os.getenv("DEFAULT_MODEL_NAME")
 
 class PipelineOptions(BaseModel):
     """LLM and data-source options; matches ASOAssessmentPipeline constructor."""
@@ -357,12 +358,12 @@ def _approve_step(step_name: str, body: StepApprovalRequest) -> dict[str, Any]:
             detail=f"Invalid step_result: {e}",
         ) from e
     try:
-        approved = pipeline.merge_step_result(step_name, sr, ctx)
+        _ = pipeline.merge_step_result(step_name, sr, ctx)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {
         "step": step_name,
-        "step_result": step_result_to_dict(approved),
+        "step_result": step_result_to_dict(sr),
         "context": assessment_context_to_dict(ctx),
     }
 
@@ -451,6 +452,12 @@ async def health_check() -> dict[str, Any]:
         "pipeline_step_names": list(PIPELINE_STEP_NAMES),
     }
 
+@app.get("/settings")
+async def settings() -> dict[str, Any]:
+    return {
+        "model": DEFAULT_MODEL_NAME,
+        "browse_mode": "jina" if os.getenv("JINA_API_KEY") else "crawl4ai"
+    }
 
 if __name__ == "__main__":
     import uvicorn

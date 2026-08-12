@@ -31,7 +31,6 @@ assessment by these guidelines.
 
 ### Output format (it is extremely important that the output is strictly JSON only, no other outside text):
 {
-  "classification": "eligible" | "unable_to_assess",
   "variant_valid": true | false,
   "hgvs_normalized": "<normalized HGVS or null>",
   "gene_id": "<gene symbol or null>",

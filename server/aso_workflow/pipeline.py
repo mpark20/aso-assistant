@@ -345,7 +345,7 @@ your JSON assessment.
                 token_usage=usage,
             )
 
-        classification = EligibilityClassification(result.get("classification", "unable_to_assess"))
+        classification = EligibilityClassification.ELIGIBLE if result.get("variant_valid") else EligibilityClassification.UNABLE_TO_ASSESS
 
         context.hgvs_normalized = norm_hgvs
         context.gene_id = mutalyzer_data.get("gene_id")
@@ -365,10 +365,11 @@ your JSON assessment.
             step_name="variant_check",
             classification=classification,
             summary=result.get("reason", ""),
-            reasoning=json.dumps(result, indent=2),
+            reasoning="",
             data_used=raw_data,
             metadata={
                 "variant_type": result.get("variant_type"),
+                "variant_valid": result.get("variant_valid", False),
                 "hgvs_normalized": result.get("hgvs_normalized"),
                 "gene_id": result.get("gene_id"),
                 "warnings": result.get("warnings", []),
@@ -504,6 +505,8 @@ CLINVAR DATA:
         except Exception:
             # do not infer metadata if system failed to fetch information
             context.existing_aso_type = "not_applicable"
+
+        context.existing_aso_summary = result.get("summary")
 
         return StepResult(
             step_name="aso_check",
@@ -735,6 +738,7 @@ to get a summary of the full text in relation to a research question of interest
             )
 
         pmech_str = result.get("pathomechanism", "unknown")
+        pmech_str = " ".join(pmech_str.split("_"))
         try:
             context.pathomechanism = Pathomechanism(pmech_str)
         except ValueError:
@@ -747,8 +751,7 @@ to get a summary of the full text in relation to a research question of interest
             step_name="pathomechanism",
             classification=EligibilityClassification.ELIGIBLE,
             summary=(
-                f"Pathomechanism: {pmech_str}. "
-                f"Haploinsufficiency: {result.get('is_haploinsufficient')}."
+                f"Pathomechanism: {pmech_str}\nHaploinsufficiency: {result.get('is_haploinsufficient')}"
             ),
             reasoning=result.get("pathomechanism_reasoning", "") + "\n\n" + result.get("haploinsufficiency_conclusion", ""),
             data_used=raw_data,
@@ -801,10 +804,8 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
             vep_data = context.raw_cache.get("ensembl_vep")
 
             if "aso_check_pubmed" not in context.raw_cache:
-                aso_check_result = self.run_aso_check(norm_hgvs, context)
-                if isinstance(aso_check_result, dict):
-                    context.raw_cache["aso_check_pubmed"] = aso_check_result
-            aso_check = context.raw_cache.get("aso_check_pubmed")
+                _ = self.run_aso_check(norm_hgvs, context)
+            aso_check = context.existing_aso_summary
 
             # fetch data specific to this step
             transcript_ctx = fetch_transcript_context(norm_hgvs)
@@ -837,11 +838,10 @@ Apply Step 3 criteria (Table 3) and return your JSON assessment.
                 cached_info += f"Inheritance pattern: {context.inheritance_pattern.value}\n"
             if context.pathomechanism:
                 cached_info += f"Pathomechanism: {context.pathomechanism.value}\n"
-            if len(cached_info) > 0:
-                cached_info = "\n" + cached_info + "\n"
-
             if aso_check:
                 cached_info += f"Summary of existing ASO literature: {aso_check}\n"
+            if len(cached_info) > 0:
+                cached_info = "\n" + cached_info + "\n"
 
             user_msg = f"""Please evaluate splicing effects for this variant (Step 3 of N1C Guidelines).
 
@@ -1547,143 +1547,72 @@ Do not change the classification labels in the step results.
         """
         Merge a user-approved (possibly edited) StepResult into the live context.
 
-        Downstream steps receive the returned context. Structured fields are taken
-        from the step JSON in ``reasoning`` when parseable, otherwise from
-        ``metadata``, matching normal step execution where possible.
+        Args:
+            step_name: Name of the current step being merged
+            result: Current StepResult object to merge
+            context: Existing data that `result` will be merged into. This is mutated in-place.
         """
         if result.step_name != step_name:
             raise ValueError(
                 f"step_name {step_name!r} does not match result.step_name {result.step_name!r}"
             )
 
-        md = dict(result.metadata or {})
-        md["user_revised"] = bool(result.edits)
-        result = StepResult(
-            step_name=result.step_name,
-            classification=result.classification,
-            summary=result.summary,
-            reasoning=result.reasoning,
-            data_used=result.data_used,
-            metadata=md,
-            error=result.error,
-            token_usage=result.token_usage,
-            edits=list(result.edits or []),
-        )
+        result.metadata = dict(result.metadata or {})
+        result.metadata["user_revised"] = bool(result.edits)
+        md = result.metadata
 
-        parsed: Optional[dict[str, Any]] = None
-        if result.reasoning and isinstance(result.reasoning, str):
-            try:
-                parsed = json.loads(result.reasoning)
-            except (json.JSONDecodeError, TypeError):
-                parsed = None
-        if parsed is not None and not isinstance(parsed, dict):
-            parsed = None
+        if (not md) or ("_parse_error" in md):
+            return result
 
         if step_name == "variant_check":
-            if parsed and "_parse_error" not in parsed:
-                norm = parsed.get("hgvs_normalized")
-                if norm:
-                    context.hgvs_normalized = norm
-                gid = parsed.get("gene_id")
-                if gid:
-                    context.gene_id = gid
-                context.variant_valid = parsed.get("variant_valid", context.variant_valid)
-                context.is_cnv_gain = parsed.get("is_cnv_gain", False)
-                context.is_cnv_loss = parsed.get("is_cnv_loss", False)
-                mut = context.raw_cache.get("mutalyzer") or {}
-                if mut:
-                    context.intronic_or_exonic = (
-                        "intronic" if mut.get("intronic") else "exonic"
-                    )
-                    context.refseq_id = mut.get("refseq_id") or context.refseq_id
-            else:
-                if md.get("hgvs_normalized"):
-                    context.hgvs_normalized = md["hgvs_normalized"]
-                if md.get("gene_id"):
-                    context.gene_id = md["gene_id"]
-                context.is_cnv_gain = md.get("is_cnv_gain", context.is_cnv_gain or False)
-                context.is_cnv_loss = md.get("is_cnv_loss", context.is_cnv_loss or False)
+            norm = md.get("hgvs_normalized")
+            if norm:
+                context.hgvs_normalized = norm
+            gid = md.get("gene_id")
+            if gid:
+                context.gene_id = gid
+            context.variant_valid = md.get("variant_valid", context.variant_valid)
+            context.is_cnv_gain = md.get("is_cnv_gain", False)
+            context.is_cnv_loss = md.get("is_cnv_loss", False)
+            mut = context.raw_cache.get("mutalyzer") or {}
+            if mut:
+                context.intronic_or_exonic = (
+                    "intronic" if mut.get("intronic") else "exonic"
+                )
+                context.refseq_id = mut.get("refseq_id") or context.refseq_id
 
         elif step_name == "aso_check":
-            existing_aso_found = md.get("aso_evidence_found")
-            if existing_aso_found is None and parsed:
-                existing_aso_found = parsed.get("aso_evidence_found", False)
-            if existing_aso_found is None:
-                existing_aso_found = bool(md.get("evidence_snippets"))
-
-            approach = md.get("approach_used") or (
-                parsed.get("approach_used", "unknown") if parsed else "unknown"
-            )
-            ev_cls = md.get("evidence_classification") or (
-                parsed.get("evidence_classification", "unknown") if parsed else "unknown"
-            )
-            aso_success = md.get("aso_success")
-            if aso_success is None and parsed is not None:
-                aso_success = parsed.get("aso_success", False)
-
-            try:
-                context.existing_aso_type = (
-                    approach if existing_aso_found else "not_applicable"
-                )
-                context.existing_aso_success = bool(
-                    existing_aso_found and aso_success
-                )
-                context.existing_aso_sufficient = context.existing_aso_success and (
-                    ev_cls == "sufficient_functional_evidence"
-                )
-            except Exception:
-                context.existing_aso_type = "not_applicable"
+            context.existing_aso_type = md.get("approach_used", "unknown") if md else "unknown"
+            context.aso_success = md.get("aso_success")
+            ev_cls = md.get("evidence_classification", "unknown")
+            context.existing_aso_sufficient = context.existing_aso_success and (ev_cls == "sufficient_functional_evidence")
 
         elif step_name == "inheritance_pattern":
-            pattern_str = md.get("inheritance_pattern")
-            if pattern_str is None and parsed:
-                pattern_str = parsed.get("inheritance_pattern", "unknown")
-            if pattern_str:
-                try:
-                    context.inheritance_pattern = InheritancePattern(pattern_str)
-                except ValueError:
-                    context.inheritance_pattern = InheritancePattern.UNKNOWN
-            conf = md.get("confidence")
-            if conf is None and parsed:
-                conf = parsed.get("confidence", "low")
-            if conf is not None:
-                context.inheritance_confidence = conf
+            pattern_str = md.get("inheritance_pattern", "unknown")
+            context.inheritance_pattern = InheritancePattern(pattern_str)
+            context.inheritance_confidence = md.get("confidence", "unknown")
 
         elif step_name == "pathomechanism":
-            pmech_str = md.get("pathomechanism")
-            if pmech_str is None and parsed:
-                pmech_str = parsed.get("pathomechanism", "unknown")
-            if pmech_str:
-                try:
-                    context.pathomechanism = Pathomechanism(pmech_str)
-                except ValueError:
-                    context.pathomechanism = Pathomechanism.UNKNOWN
-            if md.get("is_haploinsufficient") is not None:
+            pmech_str = md.get("pathomechanism", "unknown")
+            context.pathomechanism = Pathomechanism(pmech_str)
+            if md.get("is_haploinsufficient"):
                 context.is_haploinsufficient = md["is_haploinsufficient"]
-            elif parsed is not None and "is_haploinsufficient" in parsed:
-                context.is_haploinsufficient = parsed.get("is_haploinsufficient")
-            haplo = md.get("haploinsufficiency_evidence")
-            if haplo is None and parsed:
-                haplo = parsed.get("haploinsufficiency_conclusion")
-            if haplo:
-                context.haploinsufficiency_evidence = haplo
+            if md.get("haploinsufficiency_evidence"):
+                context.haploinsufficiency_evidence = md["haploinsufficiency_evidence"]
 
         elif step_name == "splicing_effects":
-            src = parsed if parsed and "_parse_error" not in parsed else md
-            if src:
-                if src.get("has_splicing_evidence") is not None:
-                    context.has_splicing_evidence = src.get("has_splicing_evidence")
-                if src.get("splicing_effect_type") is not None:
-                    context.splicing_effect_type = src.get("splicing_effect_type")
-                if src.get("canonical_splicing_destroyed") is not None:
-                    context.canonical_splicing_destroyed = src.get(
-                        "canonical_splicing_destroyed"
-                    )
+            if md.get("has_splicing_evidence"):
+                context.has_splicing_evidence = md.get("has_splicing_evidence")
+            if md.get("splicing_effect_type"):
+                context.splicing_effect_type = md.get("splicing_effect_type")
+            if md.get("canonical_splicing_destroyed"):
+                context.canonical_splicing_destroyed = md.get(
+                    "canonical_splicing_destroyed"
+                )
 
         # Section steps do not currently mutate AssessmentContext beyond raw_cache
         # filled during their own execution; nothing to sync here.
 
-        return result
     
     # ─────────────────────────────────────────────────────────────
     # Internal helpers

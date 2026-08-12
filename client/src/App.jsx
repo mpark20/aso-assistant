@@ -28,7 +28,6 @@ const STEP_LABELS = {
 
 /** Steps where users may override the eligibility classification before continuing. */
 const STEPS_WITH_CLASSIFICATION_EDITOR = new Set([
-  "variant_check",
   "splicing_effects",
   "exon_skipping",
   "knockdown",
@@ -53,27 +52,13 @@ const ELIGIBILITY_CLASSIFICATION_SELECT_ORDER = [
   "applicable",
 ];
 
-const VARIANT_CHECK_REVIEW_OPTIONS = ["valid", "invalid"];
+// TODO: define map of step name to editable fields (subset of all metadata fields)
+// see pipeline.py for the exact metadata fields
 
-const VARIANT_CHECK_REVIEW_LABELS = {
-  valid: "Valid",
-  invalid: "Invalid",
-};
-
-/** Map Step 0 server classification (+ context) to review dropdown value. */
-function variantCheckToReviewClassification(result, context) {
-  if (context?.variant_valid === false) return "invalid";
-  const cls = String(result?.classification ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "_")
-    .replace(/-/g, "_");
-  return cls === "unable_to_assess" ? "invalid" : "valid";
-}
 
 /** Map review dropdown value to Step 0 server classification. */
 function variantCheckFromReviewClassification(reviewCls) {
-  return reviewCls === "invalid" ? "unable_to_assess" : "eligible";
+  return reviewCls === "valid" ? "eligible" : "unable_to_assess";
 }
 
 /** Serialize reasoning for consistent edit comparison. */
@@ -83,14 +68,20 @@ function normalizeStepReasoning(reasoning) {
   return JSON.stringify(reasoning, null, 2);
 }
 
+function serializeForComparison(value) {
+  return typeof value === "object" && value !== null
+    ? JSON.stringify(value)
+    : String(value ?? "");
+}
+
 /** Edit records for fields changed at approve time (LLM `before` only; final value is in the step). */
 function buildStepEdits(original, approvedPayload, step) {
   const edits = [];
   const at = new Date().toISOString();
 
   const recordIfChanged = (field, beforeVal, afterVal) => {
-    const before = String(beforeVal ?? "");
-    const after = String(afterVal ?? "");
+    const before = serializeForComparison(beforeVal);
+    const after = serializeForComparison(afterVal);
     if (before === after) return;
     edits.push({ field, at, before: beforeVal ?? "" });
   };
@@ -109,6 +100,20 @@ function buildStepEdits(original, approvedPayload, step) {
       approvedPayload.classification,
     );
   }
+
+  const metadataKeys = new Set([
+    ...Object.keys(original.metadata || {}),
+    ...Object.keys(approvedPayload.metadata || {}),
+  ]);
+  metadataKeys.forEach(key => {
+    if (key !== "_tool_call_log") {
+      recordIfChanged(
+        `metadata.${key}`,
+        original.metadata?.[key],
+        approvedPayload.metadata?.[key],
+      );
+    }
+  });
 
   return edits;
 }
@@ -182,7 +187,7 @@ function ProgressBar({ current, total }) {
 
 /** Same display rules as the former StepCard reasoning block (JSON object → show `reason` when truthy). */
 function formatReasoningDisplay(reasoning) {
-  if (reasoning == null || reasoning === "") return "";
+  if (reasoning == null) return "";
   return reasoning
 }
 
@@ -227,6 +232,102 @@ function StepResultDataUsed({ dataUsed, defaultOpen = false }) {
           {JSON.stringify(dataUsed, null, 2)}
         </pre>
       )}
+    </div>
+  );
+}
+
+/** Convert metadata keys such as `aso_evidence_found` into review-friendly labels. */
+function formatMetadataLabel(key) {
+  return key
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, letter => letter.toUpperCase());
+}
+
+/** Omit internal tool-call logs at every level before displaying structured metadata. */
+function metadataForDisplay(value) {
+  if (Array.isArray(value)) return value.map(metadataForDisplay);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "_tool_call_log")
+        .map(([key, item]) => [key, metadataForDisplay(item)]),
+    );
+  }
+  return value;
+}
+
+function metadataDraftValue(value) {
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function parseMetadataDraft(value, draft) {
+  if (typeof value === "string") return draft;
+  if (typeof value === "boolean") return draft === "true";
+  if (typeof value === "number") {
+    if (draft.trim() === "") return "";
+    return Number(draft);
+  }
+  // Not sure this is necessary, metadata will always be primitive values apart from _tool_call_log?
+  const parsed = JSON.parse(draft);
+  if (Array.isArray(value) && !Array.isArray(parsed)) {
+    throw new Error("Enter a JSON array.");
+  }
+  if (value && typeof value === "object" && (parsed === null || Array.isArray(parsed) || typeof parsed !== "object")) {
+    throw new Error("Enter a JSON object.");
+  }
+  return parsed;
+}
+
+/** Editable, schema-agnostic metadata section for the review UI. */
+function StepResultMetadata({ metadata, drafts, errors, onChange }) {
+  const fields = Object.entries(metadataForDisplay(metadata || {}))
+    .filter(([key]) => key !== "_tool_call_log" && key !== "warnings");
+  if (fields.length === 0) return null;
+
+  return (
+    <div style={{
+      marginBottom: 12,
+      padding: 14,
+      background: "var(--color-background-primary)",
+      border: "0.5px solid var(--color-border-tertiary)",
+      borderRadius: "var(--border-radius-md)",
+    }}>
+      <p style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary)", margin: "0 0 10px" }}>
+        Step details
+      </p>
+      <div>
+        {fields.map(([key, value]) => (
+          <div key={key} style={{
+            padding: "8px 0",
+            borderTop: "0.5px solid var(--color-border-tertiary)",
+            fontSize: 12,
+            lineHeight: 1.45,
+          }}>
+            <label style={{ display: "block", color: "var(--color-text-tertiary)", marginBottom: 5 }}>
+              {formatMetadataLabel(key)}
+            </label>
+            {typeof value === "boolean" ? (
+              <select
+                value={drafts[key] ?? metadataDraftValue(value)}
+                onChange={event => onChange(key, event.target.value, value)}
+                style={{ width: "100%", maxWidth: 240, padding: "8px 10px", border: "0.5px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", background: "var(--color-background-primary)", color: "var(--color-text-primary)" }}
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            ) : (
+              <textarea
+                value={drafts[key] ?? metadataDraftValue(value)}
+                onChange={event => onChange(key, event.target.value, value)}
+                rows={typeof value === "object" ? 5 : 2}
+                spellCheck={typeof value === "string"}
+                style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 12, lineHeight: 1.45, fontFamily: typeof value === "object" ? "var(--font-mono)" : "inherit", border: "0.5px solid var(--color-border-secondary)", borderRadius: "var(--border-radius-md)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", resize: "vertical" }}
+              />
+            )}
+            {errors[key] && <p style={{ color: "#A32D2D", margin: "4px 0 0", fontSize: 11 }}>{errors[key]}</p>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -673,8 +774,9 @@ export default function App() {
   const [log, setLog] = useState([]);
 
   const [reviewUI, setReviewUI] = useState(null);
-  // TODO: user should be able to edit all fields in stepResult.metadata, not just summary and reasoning.
-  const [reviewEdits, setReviewEdits] = useState({ summary: "", reasoning: "", classification: "" });
+  const [reviewEdits, setReviewEdits] = useState({ summary: "", reasoning: "", classification: "", metadata: {} });
+  const [reviewMetadataDrafts, setReviewMetadataDrafts] = useState({});
+  const [reviewMetadataErrors, setReviewMetadataErrors] = useState({});
   const [approveBusy, setApproveBusy] = useState(false);
   const [approveError, setApproveError] = useState(null);
 
@@ -685,6 +787,24 @@ export default function App() {
   const addLog = (msg) => setLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
   const hgvs = `${refSeq}:${codingChange}`;
+
+  const updateReviewMetadata = useCallback((key, draft, originalValue) => {
+    setReviewMetadataDrafts(prev => ({ ...prev, [key]: draft }));
+    try {
+      const value = parseMetadataDraft(originalValue, draft);
+      setReviewEdits(prev => ({
+        ...prev,
+        metadata: { ...prev.metadata, [key]: value },
+      }));
+      setReviewMetadataErrors(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch (err) {
+      setReviewMetadataErrors(prev => ({ ...prev, [key]: err.message }));
+    }
+  }, []);
 
   const runPipeline = useCallback(async () => {
     setPhase("running");
@@ -779,13 +899,19 @@ export default function App() {
 
         const reasoningStr = result.reasoning
 
+        const visibleMetadata = metadataForDisplay(result.metadata || {});
         setReviewEdits({
           summary: result.summary ?? "",
           reasoning: reasoningStr,
-          classification: step === "variant_check"
-            ? variantCheckToReviewClassification(result, data.context)
-            : (result.classification ?? "unable_to_assess"),
+          classification: result.classification ?? "unable_to_assess",
+          metadata: result.metadata || {},
         });
+        setReviewMetadataDrafts(
+          Object.fromEntries(
+            Object.entries(visibleMetadata).map(([key, value]) => [key, metadataDraftValue(value)]),
+          ),
+        );
+        setReviewMetadataErrors({});
         setApproveError(null);
 
         let approvedPayload;
@@ -937,6 +1063,10 @@ export default function App() {
 
   const commitReview = useCallback(async () => {
     if (!reviewUI || !approvalDeferredRef.current) return;
+    if (Object.keys(reviewMetadataErrors).length > 0) {
+      setApproveError("Fix the invalid metadata fields before approving.");
+      return;
+    }
     setApproveBusy(true);
     setApproveError(null);
 
@@ -945,6 +1075,7 @@ export default function App() {
         ...reviewUI.stepResult,
         summary: reviewEdits.summary,
         reasoning: reviewEdits.reasoning,
+        metadata: reviewEdits.metadata,
       };
       if (STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step)) {
         if (reviewUI.step === "variant_check") {
@@ -983,7 +1114,7 @@ export default function App() {
     } finally {
       setApproveBusy(false);
     }
-  }, [reviewUI, reviewEdits, hgvs, useWebSearch, verbose]);
+  }, [reviewUI, reviewEdits, reviewMetadataErrors, hgvs, useWebSearch, verbose]);
 
   const cancel = () => {
     abortRef.current?.abort();
@@ -1043,8 +1174,8 @@ export default function App() {
   const showPipeline = isRunning || isReviewing;
   const isDone = phase === "done";
 
-  const classificationSelectOptions = reviewUI?.step === "variant_check"
-    ? VARIANT_CHECK_REVIEW_OPTIONS
+  const classificationSelectOptions = reviewUI?.step === "wt_upregulation"
+    ? ["eligible", "applicable", "not_eligible", "unable_to_assess"]
     : ELIGIBILITY_CLASSIFICATION_SELECT_ORDER;
 
   return (
@@ -1280,20 +1411,12 @@ export default function App() {
                   Edit the fields below, then approve to continue. Structured fields in reasoning (JSON) inform later steps when valid. Use data sources as reference.
                 </p>
 
-                {reviewUI.stepResult.metadata?.warnings?.length > 0 && (
-                  <div style={{ marginBottom: 12 }}>
-                    {reviewUI.stepResult.metadata.warnings.map((w, i) => (
-                      <div key={i} style={{
-                        fontSize: 12, color: "#854F0B", background: "#FAEEDA",
-                        borderRadius: "var(--border-radius-md)", padding: "6px 10px", marginBottom: 4, lineHeight: 1.4,
-                      }}>
-                        {w}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* TODO: make this show every field in reviewUI.stepResult.metadata */}
+                <StepResultMetadata
+                  metadata={reviewEdits.metadata}
+                  drafts={reviewMetadataDrafts}
+                  errors={reviewMetadataErrors}
+                  onChange={updateReviewMetadata}
+                />
                 {STEPS_WITH_CLASSIFICATION_EDITOR.has(reviewUI.step) && (
                   <div style={{ marginBottom: 12 }}>
                     <label style={{ display: "block", fontSize: 12, color: "var(--color-text-secondary)", marginBottom: 5 }}>
