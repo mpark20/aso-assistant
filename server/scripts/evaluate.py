@@ -7,12 +7,11 @@ pipeline for each variant, and writes results to disk. Skips variants that
 have already been processed.
 
 Usage:
-    python evaluate.py path/to/spreadsheet.xlsx
-    python evaluate.py path/to/spreadsheet.csv --output-dir evaluation_results
+    python evaluate.py -m claude-sonnet-5 --split n1c_assessed_variants -n 2
 """
 from collections import defaultdict
-import time
 import argparse
+import asyncio
 import json
 import os
 import re
@@ -20,7 +19,8 @@ import sys
 import time
 import pandas as pd
 from pathlib import Path
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+from typing import Any
 
 from aso_workflow.pipeline import ASOAssessmentPipeline
 
@@ -115,6 +115,103 @@ def calculate_score(true_outcome: dict, pred_outcome: dict, strict: bool = False
     return scores
 
 
+@dataclass
+class VariantResult:
+    idx: int
+    status: str  # "processed", "failed", "skipped"
+    true_outcome: dict[str, Any] | None = None
+    pred_outcome: dict[str, Any] | None = None
+    hgvs: str | None = None
+    out_path: str | None = None
+    error: str | None = None
+
+
+async def generate_report(
+    semaphore: asyncio.Semaphore,
+    pipeline: ASOAssessmentPipeline,
+    idx: int,
+    total: int,
+    hgvs: str,
+    source: str,
+    true_outcome: dict,
+    out_path: str,
+    verbose: bool,
+) -> VariantResult:
+    """Run the pipeline for one variant, limited by the semaphore."""
+    async with semaphore:
+        if verbose:
+            print(f"\n[{idx + 1}/{total}] Processing: {hgvs} (source: {source})")
+
+        try:
+            report = await asyncio.to_thread(pipeline.run, hgvs)
+            parsed_report = report.to_dict()
+            try:
+                backup_report = {
+                    "splice_correction": report.splice_correction.value,
+                    "exon_skipping": report.exon_skipping.value,
+                    "transcript_knockdown": report.transcript_knockdown.value,
+                    "wt_upregulation": report.wt_upregulation.value,
+                }
+            except Exception:
+                backup_report = None
+
+            pred_outcome = parsed_report.get("classifications", backup_report)
+            result = {
+                "hgvs": hgvs,
+                "dataset": source,
+                "true_outcome": true_outcome,
+                "predicted_outcome": pred_outcome,
+                "pipeline_report": asdict(report),
+            }
+            with open(out_path, "w") as f:
+                json.dump(result, f, indent=2)
+
+            print(f"  → Wrote {out_path}")
+
+            return VariantResult(
+                idx=idx,
+                status="processed",
+                true_outcome=true_outcome,
+                pred_outcome=pred_outcome,
+                hgvs=hgvs,
+                out_path=out_path,
+            )
+        except Exception as e:
+            print(f"  ✗ Failed ({hgvs}): {e}")
+            return VariantResult(
+                idx=idx,
+                status="failed",
+                hgvs=hgvs,
+                error=str(e),
+            )
+
+
+async def generate_report_batch(
+    examples: list[tuple],
+    pipeline: ASOAssessmentPipeline,
+    batch_size: int,
+    total: int,
+    verbose: bool,
+) -> list[VariantResult]:
+    """Run examples_to_run variants with at most batch_size concurrent pipeline runs."""
+    semaphore = asyncio.Semaphore(batch_size)
+    tasks = [
+        generate_report(
+            semaphore,
+            pipeline,
+            idx,
+            total,
+            hgvs,
+            source,
+            true_outcome,
+            out_path,
+            verbose,
+        )
+        for idx, hgvs, source, true_outcome, out_path in examples
+    ]
+    return await asyncio.gather(*tasks)
+
+
 def main(args) -> None:
     """Run pipeline on each variant, writing results to disk as processed.
     
@@ -125,14 +222,16 @@ def main(args) -> None:
         verbose: If True, print progress to stdout during pipeline execution
         llm_only: If True, bypass database calls in all steps; only gene, norm_hgvs, and instruction are added to prompts
         use_web_search: If True, llm calls will use the model provider's native web search tool.
+        batch_size: Number of cases to run concurrently (default: 1).
     """
     input_file = args.data_file
     model_name = args.model_name
     num_examples = args.num_examples
     split = args.split
-    verbose = not args.quiet
+    verbose = args.verbose
     llm_only = args.llm_only
     use_web_search = args.use_web_search
+    batch_size = args.batch_size
 
     output_dir = f"outputs/{model_name.split('/')[-1]}"
     
@@ -161,8 +260,8 @@ def main(args) -> None:
     failed = 0
     start_time = time.time()
 
-    true_outcomes = []
-    pred_outcomes = []
+    results: list[VariantResult] = []
+    examples_to_run: list[tuple] = []
 
     for idx, (_, row) in enumerate(df.iterrows()):
         hgvs = str(row['hgvs']).strip()
@@ -176,60 +275,42 @@ def main(args) -> None:
 
         safe_name = sanitize_hgvs_for_filename(hgvs)
         out_path = os.path.join(output_dir, f"{safe_name}.json")
+        true_outcome = parse_outcome_str(row['parsed_outcome'].strip())
 
         if os.path.exists(out_path):
             if verbose:
                 print(f"[{idx + 1}/{total}] Skipping (already exists): {hgvs}")
             skipped += 1
-            report = json.load(open(out_path))
-            pred_outcomes.append(report['predicted_outcome'])
-            true_outcomes.append(parse_outcome_str(row['parsed_outcome'].strip()))
+            with open(out_path) as f:
+                report = json.load(f)
+            results.append(VariantResult(
+                idx=idx,
+                status="skipped",
+                true_outcome=true_outcome,
+                pred_outcome=report['predicted_outcome'],
+            ))
             continue
 
-        if verbose:
-            print(f"\n[{idx + 1}/{total}] Processing: {hgvs} (source: {source})")
+        examples_to_run.append((idx, hgvs, source, true_outcome, out_path))
 
-        try:
-            report = pipeline.run(hgvs)
-            parsed_report = report.to_dict()
-            try:
-                backup_report = {
-                    "splice_correction": report.splice_correction.value,
-                    "exon_skipping": report.exon_skipping.value,
-                    "transcript_knockdown": report.transcript_knockdown.value,
-                    "wt_upregulation": report.wt_upregulation.value,
-                }
-            except Exception as e:
-                backup_report = None
-            
-            true_outcome = parse_outcome_str(row['parsed_outcome'].strip())
-            true_outcomes.append(true_outcome)
-            pred_outcome = parsed_report.get("classifications", backup_report)
-            pred_outcomes.append(pred_outcome)
+    if examples_to_run:
+        if verbose and batch_size > 1:
+            print(f"\nRunning {len(examples_to_run)} variants with batch_size={batch_size}")
+        batch_results = asyncio.run(
+            generate_report_batch(examples_to_run, pipeline, batch_size, total, verbose)
+        )
+        results.extend(batch_results)
 
-            result = {
-                "hgvs": hgvs,
-                "true_outcome": true_outcome,
-                "dataset": source,
-                "predicted_outcome": pred_outcome,
-                "pipeline_report": asdict(report),
-            }
-            with open(out_path, 'w') as f:
-                json.dump(result, f, indent=2)
-            
-            processed += 1
-            if verbose:
-                print(f"  → Wrote {out_path}")
-        except Exception as e:
-            failed += 1
-            if verbose:
-                print(f"  ✗ Failed: {e}")
+    results.sort(key=lambda r: r.idx)
+    true_outcomes = [r.true_outcome for r in results if r.true_outcome is not None]
+    pred_outcomes = [r.pred_outcome for r in results if r.pred_outcome is not None]
+    processed = sum(1 for r in results if r.status == "processed")
+    failed = sum(1 for r in results if r.status == "failed")
 
-            #time.sleep(1)
-    
     end_time = time.time()
     print(f"Evaluation took {end_time - start_time} seconds")
-    print(f"Average time per example: {(end_time - start_time) / processed} seconds")
+    if processed:
+        print(f"Average time per example: {(end_time - start_time) / processed} seconds")
 
     if verbose:
         print(f"\n{'='*60}")
@@ -255,9 +336,9 @@ if __name__ == "__main__":
         help="Model name to use for evaluation (default: gemini/gemini-3-flash-preview)",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-v", "--verbose",
         action="store_true",
-        help="Reduce output verbosity",
+        help="Show detailed report progress",
     )
     parser.add_argument(
         "-n", "--num-examples",
@@ -282,10 +363,20 @@ if __name__ == "__main__":
         action="store_true",
         help="Bypass database calls; only add gene, norm_hgvs, and instruction to prompts (for ablation experiments)",
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Number of cases to run concurrently (default: 1)",
+    )
     args = parser.parse_args()
 
     if not args.data_file.exists():
         print(f"Error: Spreadsheet not found: {args.data_file}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.batch_size < 1:
+        print("Error: --batch-size must be at least 1", file=sys.stderr)
         sys.exit(1)
     
     print(args)
